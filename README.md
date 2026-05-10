@@ -20,13 +20,13 @@ This package is the productised form of the proof-of-concept script [`backup.php
 
 | Package | PHP | Laravel | Testbench | PHPUnit |
 |---|---|---|---|---|
-| `ahmednour/laravel-stream-backup` | `8.1 / 8.2 / 8.3` | `10.*` | `8.*` | `10.*` |
-| `ahmednour/laravel-stream-backup` | `8.2 / 8.3` | `11.*` | `9.*` | `11.*` |
+| `ahmednour1430464/laravel-stream-backup` | `8.1 / 8.2 / 8.3` | `10.*` | `8.*` | `10.*` |
+| `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3` | `11.*` | `9.*` | `11.*` |
 
 ## Installation
 
 ```bash
-composer require ahmednour/laravel-stream-backup
+composer require ahmednour1430464/laravel-stream-backup
 php artisan vendor:publish --tag=stream-backup-config
 php artisan vendor:publish --tag=stream-backup-migrations
 php artisan migrate
