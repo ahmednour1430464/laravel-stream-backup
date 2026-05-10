@@ -1,0 +1,12 @@
+{
+    "name": "ahmednour/mysql-stream-backup",
+    "authors": [
+        {
+            "name": "ahmednour",
+            "email": "ahmednour1430464@gmail.com"
+        }
+    ],
+    "require": {
+        "aws/aws-sdk-php": "^3.380"
+    }
+}
