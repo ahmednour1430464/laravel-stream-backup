@@ -1,6 +1,6 @@
 # laravel-stream-backup
 
-> Streaming MySQL → pigz → S3 multipart backups for Laravel 11, with **constant memory use** regardless of database size.
+> Streaming MySQL → pigz → S3 multipart backups for Laravel 10 & 11, with **constant memory use** regardless of database size.
 
 `mysqldump` is piped to `pigz` which is piped directly into S3 multipart uploads. Nothing is ever buffered to disk and nothing exceeds the 32 MB part buffer in RAM, so a 300 GB database and a 3 GB database use roughly the same amount of memory.
 
@@ -10,11 +10,18 @@ This package is the productised form of the proof-of-concept script [`backup.php
 
 ## Requirements
 
-- PHP `^8.2` with the `pcntl` and `hash` extensions
-- Laravel `^11.0`
+- PHP `^8.1` with the `pcntl` and `hash` extensions (PHP `^8.2` required when running on Laravel 11)
+- Laravel `^10.0` or `^11.0`
 - `mysqldump` on `PATH`
 - `pigz` on `PATH` (falls back to built-in `gzip` driver if unavailable)
 - An S3-compatible bucket (AWS S3, DigitalOcean Spaces, MinIO, ...)
+
+### Compatibility matrix
+
+| Package | PHP | Laravel | Testbench | PHPUnit |
+|---|---|---|---|---|
+| `ahmednour/laravel-stream-backup` | `8.1 / 8.2 / 8.3` | `10.*` | `8.*` | `10.*` |
+| `ahmednour/laravel-stream-backup` | `8.2 / 8.3` | `11.*` | `9.*` | `11.*` |
 
 ## Installation
 
