@@ -1,5 +1,5 @@
 {
-    "name": "ahmednour/laravel-stream-backup",
+    "name": "ahmednour1430464/laravel-stream-backup",
     "description": "Streaming MySQL backup package for Laravel: mysqldump -> pigz -> S3 multipart upload with constant memory use.",
     "type": "library",
     "license": "MIT",
