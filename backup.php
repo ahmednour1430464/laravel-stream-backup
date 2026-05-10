@@ -57,6 +57,12 @@ $s3 = new S3Client([
     ],
 
     'use_path_style_endpoint' => false,
+
+    // DigitalOcean Spaces does not support the default AWS SDK checksum
+    // behavior introduced in aws-sdk-php >= 3.337. Without these options,
+    // CompleteMultipartUpload fails with: MalformedXML.
+    'request_checksum_calculation'  => 'when_required',
+    'response_checksum_validation'  => 'when_required',
 ]);
 
 $dumpCommand = sprintf(
@@ -255,6 +261,13 @@ try {
         $totalBytesUploaded += strlen($s3Buffer);
     }
 
+    if (empty($parts)) {
+        throw new RuntimeException(
+            'No data was uploaded. mysqldump produced no output. '
+            . 'stderr: ' . trim((string) stream_get_contents($dumpPipes[2]))
+        );
+    }
+
     $s3->completeMultipartUpload([
         'Bucket' => $config['s3']['bucket'],
         'Key' => $config['s3']['key'],
@@ -266,6 +279,14 @@ try {
 
     $dumpExit = proc_close($dumpProc);
     $pigzExit = proc_close($pigzProc);
+
+    if ($dumpExit !== 0) {
+        throw new RuntimeException("mysqldump exited with code $dumpExit");
+    }
+
+    if ($pigzExit !== 0) {
+        throw new RuntimeException("pigz exited with code $pigzExit");
+    }
 
     $duration = microtime(true) - $startTime;
 
