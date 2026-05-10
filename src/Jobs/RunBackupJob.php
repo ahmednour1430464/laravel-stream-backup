@@ -1,0 +1,149 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ahmednour\StreamBackup\Jobs;
+
+use Ahmednour\StreamBackup\Contracts\CompressionDriver;
+use Ahmednour\StreamBackup\DTOs\BackupContext;
+use Ahmednour\StreamBackup\DTOs\BackupMetadata;
+use Ahmednour\StreamBackup\Enums\BackupStatus;
+use Ahmednour\StreamBackup\Models\Backup;
+use Ahmednour\StreamBackup\Pipelines\StreamPipeline;
+use Ahmednour\StreamBackup\Support\BackupPathBuilder;
+use Ahmednour\StreamBackup\Support\BackupSemaphore;
+use Ahmednour\StreamBackup\Support\BackupVerifier;
+use Ahmednour\StreamBackup\Support\RetentionClassifier;
+use Carbon\CarbonImmutable;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Config\Repository as Config;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Long-running backup job. `$timeout = 0` is critical — Laravel's default
+ * 60-second worker timeout would SIGKILL a multi-hour backup mid-stream.
+ * See README for required queue worker invocation.
+ */
+class RunBackupJob implements ShouldQueue
+{
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
+
+    public int $timeout = 0;
+
+    public int $tries = 3;
+
+    public function __construct(public BackupContext $context)
+    {
+    }
+
+    public function handle(
+        StreamPipeline $pipeline,
+        BackupPathBuilder $pathBuilder,
+        BackupSemaphore $semaphore,
+        CompressionDriver $compression,
+        RetentionClassifier $classifier,
+        BackupVerifier $verifier,
+        Config $config,
+    ): void {
+        // SIGTERM handling: Supervisor sends SIGTERM on graceful stop. We
+        // mark the backup as Aborted and let `finally` release the slot.
+        $aborted = false;
+        if (function_exists('pcntl_async_signals')) {
+            pcntl_async_signals(true);
+            pcntl_signal(SIGTERM, static function () use (&$aborted): void {
+                $aborted = true;
+            });
+        }
+
+        if (! $semaphore->acquire()) {
+            // All slots busy — re-queue with a delay so we don't hammer Redis.
+            static::dispatch($this->context)->delay(now()->addMinutes(5));
+            return;
+        }
+
+        $startedAt = CarbonImmutable::now();
+        $backup = Backup::create([
+            'tenant_id'          => $this->context->tenantId,
+            'database_name'      => $this->context->databaseName,
+            'disk'               => $this->context->disk,
+            'status'             => BackupStatus::Pending->value,
+            'compression_driver' => $compression->name(),
+            'started_at'         => $startedAt,
+        ]);
+
+        $path = $pathBuilder->build($this->context, $startedAt);
+        $backup->forceFill([
+            'path'           => $path,
+            'retention_tier' => $classifier->classify($startedAt)->value,
+        ])->save();
+        $backup->markAs(BackupStatus::Dumping);
+
+        try {
+            $bucket = (string) ($config->get("filesystems.disks.{$this->context->disk}.bucket")
+                ?? $this->context->disk);
+
+            $metadata = new BackupMetadata(
+                backupId:  (int) $backup->id,
+                tenantId:  $this->context->tenantId,
+                bucket:    $bucket,
+                path:      $path,
+                disk:      $this->context->disk,
+                startedAt: $startedAt,
+            );
+
+            $backup->markAs(BackupStatus::Uploading);
+            $result = $pipeline->run($this->context, $metadata);
+
+            if ($aborted) {
+                throw new \RuntimeException('Backup aborted by SIGTERM.');
+            }
+
+            $backup->forceFill([
+                'size'              => $result->sizeBytes,
+                'checksum'          => $result->checksum,
+                'upload_speed_mbps' => $result->speedMbps(),
+            ])->save();
+
+            if ((bool) $config->get('stream-backup.verify_after_upload', true)) {
+                $backup->markAs(BackupStatus::Verifying);
+                $verifier->verify($backup);
+            }
+
+            $finishedAt = CarbonImmutable::now();
+            $backup->markAs(BackupStatus::Completed, [
+                'finished_at' => $finishedAt,
+                'duration'    => $finishedAt->getTimestamp() - $startedAt->getTimestamp(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('stream-backup job failed', [
+                'backup_id' => $backup->id,
+                'tenant'    => $this->context->tenantId,
+                'message'   => $e->getMessage(),
+            ]);
+
+            try {
+                $backup->markAs($aborted ? BackupStatus::Aborted : BackupStatus::Failed, [
+                    'error_message' => $e->getMessage(),
+                    'finished_at'   => now(),
+                ]);
+            } catch (\Throwable) {
+                $backup->forceFill([
+                    'status'        => ($aborted ? BackupStatus::Aborted : BackupStatus::Failed)->value,
+                    'error_message' => $e->getMessage(),
+                    'finished_at'   => now(),
+                ])->save();
+            }
+
+            throw $e;
+        } finally {
+            $semaphore->release();
+        }
+    }
+}

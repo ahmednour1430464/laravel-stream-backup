@@ -1,3 +1,6 @@
 /vendor
 .env
 .qoder/*
+/.phpunit.result.cache
+/composer.lock
+/.phpunit.cache

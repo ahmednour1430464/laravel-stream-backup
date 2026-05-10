@@ -1,0 +1,12 @@
+providers:
+  - Ahmednour\StreamBackup\StreamBackupServiceProvider
+
+migrations:
+  - database/migrations
+
+env:
+  - APP_ENV=local
+  - APP_DEBUG=true
+  - DB_CONNECTION=mysql
+  - CACHE_STORE=array
+  - QUEUE_CONNECTION=sync

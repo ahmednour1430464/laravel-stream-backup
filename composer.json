@@ -1,5 +1,9 @@
 {
-    "name": "ahmednour/mysql-stream-backup",
+    "name": "ahmednour/laravel-stream-backup",
+    "description": "Streaming MySQL backup package for Laravel: mysqldump -> pigz -> S3 multipart upload with constant memory use.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "mysql", "backup", "streaming", "s3", "digitalocean-spaces", "mysqldump", "pigz"],
     "authors": [
         {
             "name": "ahmednour",
@@ -7,6 +11,42 @@
         }
     ],
     "require": {
+        "php": "^8.2",
+        "ext-pcntl": "*",
+        "ext-hash": "*",
+        "illuminate/support": "^11.0",
+        "illuminate/database": "^11.0",
+        "illuminate/queue": "^11.0",
+        "illuminate/console": "^11.0",
+        "illuminate/cache": "^11.0",
+        "illuminate/bus": "^11.0",
+        "illuminate/contracts": "^11.0",
         "aws/aws-sdk-php": "^3.380"
-    }
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0",
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ahmednour\\StreamBackup\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ahmednour\\StreamBackup\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Ahmednour\\StreamBackup\\StreamBackupServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
 }
