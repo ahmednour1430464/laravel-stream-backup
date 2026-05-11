@@ -110,8 +110,56 @@ return [
     |--------------------------------------------------------------------------
     | Scheduling
     |--------------------------------------------------------------------------
+    |
+    | When `auto_schedule` is true, the package registers the cleanup jobs
+    | on Laravel's scheduler automatically (see StreamBackupServiceProvider).
+    |
+    | The `schedule` block below lets you control WHEN those jobs fire
+    | without having to disable auto_schedule and wire them yourself.
+    |
+    | Invalid values throw InvalidConfigException at boot time so typos
+    | surface immediately instead of silently running at the wrong cadence.
+    |
+    |   cleanup.frequency:  'daily' | 'hourly' | 'weekly' | 'monthly' | 'cron'
+    |       - daily/weekly/monthly: uses `cleanup.time` (HH:MM, 24h)
+    |       - cron:                 uses `cleanup.cron` (raw expression)
+    |
+    |   stale_multipart.frequency:  'hourly' | 'everyMinutes' | 'cron'
+    |       - everyMinutes: uses `stale_multipart.minutes`
+    |                       (must divide 60 evenly: 1,2,3,4,5,6,10,12,15,20,30,60)
+    |       - cron:         uses `stale_multipart.cron` (raw expression)
+    |
+    |   stale_multipart.stale_hours:
+    |       Hours a multipart upload may remain in 'Uploading' before it is
+    |       considered stale and aborted. Floored at 1.
+    |
+    |   queue / connection (nullable):
+    |       If set, the scheduled cleanup jobs are pushed onto this
+    |       queue/connection. Leave null to use the app's default queue on
+    |       the default connection. NOTE: this is independent of the
+    |       `queue` block above, which only routes RunBackupJob.
+    |
     */
-    'auto_schedule'       => true,
+    'auto_schedule'       => env('STREAM_BACKUP_AUTO_SCHEDULE', true),
     'verify_after_upload' => true,
+
+    'schedule' => [
+        'timezone'   => env('STREAM_BACKUP_SCHEDULE_TZ'),
+        'connection' => env('STREAM_BACKUP_CLEANUP_CONNECTION'),
+        'queue'      => env('STREAM_BACKUP_CLEANUP_QUEUE'),
+
+        'cleanup' => [
+            'frequency' => env('STREAM_BACKUP_CLEANUP_FREQUENCY', 'daily'),
+            'time'      => env('STREAM_BACKUP_CLEANUP_TIME', '03:15'),
+            'cron'      => env('STREAM_BACKUP_CLEANUP_CRON'),
+        ],
+
+        'stale_multipart' => [
+            'frequency'   => env('STREAM_BACKUP_STALE_FREQUENCY', 'hourly'),
+            'minutes'     => (int) env('STREAM_BACKUP_STALE_MINUTES', 60),
+            'cron'        => env('STREAM_BACKUP_STALE_CRON'),
+            'stale_hours' => max(1, (int) env('STREAM_BACKUP_STALE_HOURS', 6)),
+        ],
+    ],
 
 ];

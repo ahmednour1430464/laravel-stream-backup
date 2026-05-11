@@ -28,6 +28,7 @@ use Ahmednour\StreamBackup\Support\RetentionClassifier;
 use Ahmednour\StreamBackup\Uploaders\S3MultipartUploader;
 use Aws\S3\S3Client;
 use Aws\S3\S3ClientInterface;
+use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as Config;
@@ -137,11 +138,109 @@ class StreamBackupServiceProvider extends ServiceProvider
         }
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-            if (! $this->app->make(Config::class)->get('stream-backup.auto_schedule', true)) {
+            $config = $this->app->make(Config::class);
+
+            if (! $config->get('stream-backup.auto_schedule', true)) {
                 return;
             }
-            $schedule->job(new AbortStaleMultipartUploads())->hourly();
-            $schedule->job(new BackupCleanupJob())->dailyAt('03:15');
+
+            $staleHours = max(1, (int) $config->get('stream-backup.schedule.stale_multipart.stale_hours', 6));
+            $connection = $config->get('stream-backup.schedule.connection');
+            $queue      = $config->get('stream-backup.schedule.queue');
+            $timezone   = $config->get('stream-backup.schedule.timezone');
+
+            $staleEvent = $schedule->job(
+                new AbortStaleMultipartUploads($staleHours),
+                $queue,
+                $connection,
+            );
+            $this->applyFrequency($staleEvent, (array) $config->get('stream-backup.schedule.stale_multipart', []), 'stale_multipart');
+
+            $cleanupEvent = $schedule->job(new BackupCleanupJob(), $queue, $connection);
+            $this->applyFrequency($cleanupEvent, (array) $config->get('stream-backup.schedule.cleanup', []), 'cleanup');
+
+            if (is_string($timezone) && $timezone !== '') {
+                $staleEvent->timezone($timezone);
+                $cleanupEvent->timezone($timezone);
+            }
         });
+    }
+
+    /**
+     * Valid frequency values per job kind. Anything else throws so that
+     * typos surface immediately instead of silently falling back to a
+     * default cadence (which for AbortStaleMultipartUploads would mean
+     * leaking S3 multipart-upload cost for up to 24h).
+     */
+    private const VALID_FREQUENCIES = [
+        'cleanup'         => ['daily', 'hourly', 'weekly', 'monthly', 'cron'],
+        'stale_multipart' => ['hourly', 'everyMinutes', 'cron'],
+    ];
+
+    /**
+     * Cron `*\/N` expressions only fire evenly when N divides 60.
+     */
+    private const VALID_EVERY_MINUTES = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
+
+    /**
+     * Apply the configured frequency to a scheduled job event.
+     */
+    private function applyFrequency(Event $event, array $cfg, string $kind): void
+    {
+        $default   = $kind === 'cleanup' ? 'daily' : 'hourly';
+        $frequency = (string) ($cfg['frequency'] ?? $default);
+        $allowed   = self::VALID_FREQUENCIES[$kind];
+
+        if (! in_array($frequency, $allowed, true)) {
+            throw new InvalidConfigException(sprintf(
+                "stream-backup.schedule.%s.frequency must be one of [%s]; got '%s'.",
+                $kind,
+                implode(', ', $allowed),
+                $frequency,
+            ));
+        }
+
+        match ($frequency) {
+            'cron'         => $event->cron($this->requireCron($cfg, $kind)),
+            'hourly'       => $event->hourly(),
+            'daily'        => $event->dailyAt($this->requireTime($cfg, $kind)),
+            'weekly'       => $event->weeklyOn(0, $this->requireTime($cfg, $kind)),
+            'monthly'      => $event->monthlyOn(1, $this->requireTime($cfg, $kind)),
+            'everyMinutes' => $event->cron($this->buildEveryMinutesExpr($cfg, $kind)),
+        };
+    }
+
+    private function requireCron(array $cfg, string $kind): string
+    {
+        $cron = (string) ($cfg['cron'] ?? '');
+        if ($cron === '') {
+            throw new InvalidConfigException(
+                "stream-backup.schedule.{$kind}.cron must be set when frequency is 'cron'."
+            );
+        }
+        return $cron;
+    }
+
+    private function requireTime(array $cfg, string $kind): string
+    {
+        $time = (string) ($cfg['time'] ?? '');
+        if (! preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
+            throw new InvalidConfigException(
+                "stream-backup.schedule.{$kind}.time must be 'HH:MM' (24h); got '{$time}'."
+            );
+        }
+        return $time;
+    }
+
+    private function buildEveryMinutesExpr(array $cfg, string $kind): string
+    {
+        $minutes = (int) ($cfg['minutes'] ?? 0);
+        if (! in_array($minutes, self::VALID_EVERY_MINUTES, true)) {
+            throw new InvalidConfigException(
+                "stream-backup.schedule.{$kind}.minutes must divide 60 evenly; "
+                . 'use one of [' . implode(', ', self::VALID_EVERY_MINUTES) . '].'
+            );
+        }
+        return "*/{$minutes} * * * *";
     }
 }
