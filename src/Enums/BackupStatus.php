@@ -18,7 +18,7 @@ enum BackupStatus: string
 
     public function canTransitionTo(self $next): bool
     {
-        return match ($this) {
+        $allowed = match ($this) {
             self::Pending     => $next === self::Dumping || $next === self::Failed || $next === self::Aborted,
             self::Dumping     => in_array($next, [self::Compressing, self::Uploading, self::Failed, self::Aborted], true),
             self::Compressing => in_array($next, [self::Uploading, self::Failed, self::Aborted], true),
@@ -26,13 +26,51 @@ enum BackupStatus: string
             self::Verifying   => in_array($next, [self::Completed, self::Failed], true),
             default           => false,
         };
+
+        self::log($allowed ? 'debug' : 'warning', 'BackupStatus.canTransitionTo evaluated', [
+            'from'    => $this->value,
+            'to'      => $next->value,
+            'allowed' => $allowed,
+        ]);
+
+        return $allowed;
     }
 
     public function isTerminal(): bool
     {
-        return match ($this) {
+        $terminal = match ($this) {
             self::Completed, self::Failed, self::Aborted, self::TimedOut => true,
             default => false,
         };
+
+        self::log('debug', 'BackupStatus.isTerminal evaluated', [
+            'status'   => $this->value,
+            'terminal' => $terminal,
+        ]);
+
+        return $terminal;
+    }
+
+    /**
+     * Safely emit a log entry without requiring a fully booted Laravel app.
+     *
+     * Falls back silently when no logger is bound (e.g. isolated unit tests
+     * that do not boot the Testbench container).
+     */
+    private static function log(string $level, string $message, array $context = []): void
+    {
+        if (! function_exists('app')) {
+            return;
+        }
+
+        try {
+            $app = app();
+            if (! $app->bound('log')) {
+                return;
+            }
+            $app->make('log')->{$level}($message, $context);
+        } catch (\Throwable) {
+            // Never let logging crash status evaluation.
+        }
     }
 }
