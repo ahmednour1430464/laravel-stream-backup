@@ -40,6 +40,7 @@ final class ConfigTenantResolver implements TenantResolver
                 disk:           (string) ($tenant['disk'] ?? $disk),
                 timeoutSeconds: (int) ($tenant['timeout'] ?? 0),
                 extraDumpFlags: (array) ($tenant['extra_dump_flags'] ?? []),
+                driver:         $tenant['driver'] ?? null,
             );
         }
     }

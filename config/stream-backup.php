@@ -32,12 +32,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | mysqldump
+    | Database dump
     |--------------------------------------------------------------------------
+    |
+    | driver: 'auto' detects from database.default connection driver.
+    |         Explicit: 'mysql', 'pgsql', 'sqlite', or any custom driver
+    |         registered via DumperFactory::extend().
+    |
+    | extra_flags: additional CLI flags passed to ALL dump drivers.
+    |
+    | drivers: per-driver configuration. Each entry specifies the binary
+    |          path/name for that driver's CLI tool.
+    |
     */
     'dump' => [
-        'binary'      => env('STREAM_BACKUP_MYSQLDUMP', 'mysqldump'),
+        'driver'      => env('STREAM_BACKUP_DUMP_DRIVER', 'auto'),
         'extra_flags' => [],
+
+        'drivers' => [
+            'mysql' => [
+                // Backward compat: checks STREAM_BACKUP_MYSQLDUMP first
+                'binary' => env('STREAM_BACKUP_MYSQLDUMP_BINARY',
+                                env('STREAM_BACKUP_MYSQLDUMP', 'mysqldump')),
+            ],
+            'pgsql' => [
+                'binary' => env('STREAM_BACKUP_PGDUMP_BINARY', 'pg_dump'),
+            ],
+            'sqlite' => [
+                'binary' => env('STREAM_BACKUP_SQLITE3_BINARY', 'sqlite3'),
+            ],
+        ],
     ],
 
     /*
@@ -99,6 +123,7 @@ return [
     |
     | Example:
     |   ['connection' => 'tenant_1', 'database' => 'company_1', 'tenant_id' => 1],
+    |   ['connection' => 'pg_tenant', 'database' => 'orders', 'tenant_id' => 2, 'driver' => 'pgsql'],
     |
     | Leave this empty to have backup:all fall back to a single BackupContext
     | derived from config('database.default').

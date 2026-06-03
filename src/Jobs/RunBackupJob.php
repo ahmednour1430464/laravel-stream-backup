@@ -7,6 +7,7 @@ namespace Ahmednour\StreamBackup\Jobs;
 use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\DTOs\BackupContext;
 use Ahmednour\StreamBackup\DTOs\BackupMetadata;
+use Ahmednour\StreamBackup\Dumpers\DumperFactory;
 use Ahmednour\StreamBackup\Enums\BackupStatus;
 use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Pipelines\StreamPipeline;
@@ -48,6 +49,7 @@ class RunBackupJob implements ShouldQueue
         BackupPathBuilder $pathBuilder,
         BackupSemaphore $semaphore,
         CompressionDriver $compression,
+        DumperFactory $dumperFactory,
         RetentionClassifier $classifier,
         BackupVerifier $verifier,
         Config $config,
@@ -69,12 +71,14 @@ class RunBackupJob implements ShouldQueue
         }
 
         $startedAt = CarbonImmutable::now();
+        $dumper    = $dumperFactory->make($this->context->driver);
         $backup = Backup::create([
             'tenant_id'          => $this->context->tenantId,
             'database_name'      => $this->context->databaseName,
             'disk'               => $this->context->disk,
             'status'             => BackupStatus::Pending->value,
             'compression_driver' => $compression->name(),
+            'dump_driver'        => $dumper->name(),
             'started_at'         => $startedAt,
         ]);
 

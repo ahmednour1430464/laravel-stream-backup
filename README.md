@@ -1,8 +1,10 @@
 # laravel-stream-backup
 
-> Streaming MySQL → pigz → S3 multipart backups for Laravel 10 & 11, with **constant memory use** regardless of database size.
+> Streaming database → compress → S3 multipart backups for Laravel 10 & 11, with **constant memory use** regardless of database size.
 
-`mysqldump` is piped to `pigz` which is piped directly into S3 multipart uploads. Nothing is ever buffered to disk and nothing exceeds the 32 MB part buffer in RAM, so a 300 GB database and a 3 GB database use roughly the same amount of memory.
+Supports **MySQL**, **PostgreSQL**, **SQLite**, and **custom drivers** via the extensible `DumperFactory`.
+
+The dump process is piped to a compressor (pigz/gzip) which is piped directly into S3 multipart uploads. Nothing is ever buffered to disk and nothing exceeds the 32 MB part buffer in RAM, so a 300 GB database and a 3 GB database use roughly the same amount of memory.
 
 This package is the productised form of the proof-of-concept script [`backup.php`](./backup.php).
 
@@ -12,9 +14,12 @@ This package is the productised form of the proof-of-concept script [`backup.php
 
 - PHP `^8.1` with the `pcntl` and `hash` extensions (PHP `^8.2` required when running on Laravel 11)
 - Laravel `^10.0` or `^11.0`
-- `mysqldump` on `PATH`
-- `pigz` on `PATH` (falls back to built-in `gzip` driver if unavailable)
 - An S3-compatible bucket (AWS S3, DigitalOcean Spaces, MinIO, ...)
+- One of the following dump tools on `PATH`:
+  - **MySQL**: `mysqldump`
+  - **PostgreSQL**: `pg_dump`
+  - **SQLite**: `sqlite3`
+- `pigz` on `PATH` (falls back to built-in `gzip` driver if unavailable)
 
 ### Compatibility matrix
 
@@ -22,6 +27,15 @@ This package is the productised form of the proof-of-concept script [`backup.php
 |---|---|---|---|---|
 | `ahmednour1430464/laravel-stream-backup` | `8.1 / 8.2 / 8.3` | `10.*` | `8.*` | `10.*` |
 | `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3` | `11.*` | `9.*` | `11.*` |
+
+## Supported Databases
+
+| Database   | Dump Tool    | Credential Handling | Notes |
+|---|---|---|---|
+| MySQL      | `mysqldump`  | Temp credential file (`--defaults-extra-file`) | Default; backward compatible |
+| PostgreSQL | `pg_dump`    | `PGPASSWORD` environment variable | Password never on CLI |
+| SQLite     | `sqlite3`    | N/A (file-based, no auth) | Reads path from Laravel config |
+| Custom     | Your choice  | Your choice | Register via `DumperFactory::extend()` |
 
 ## Installation
 
@@ -45,7 +59,12 @@ STREAM_BACKUP_COMPRESSION_LEVEL=4
 STREAM_BACKUP_MAX_CONCURRENT=2
 STREAM_BACKUP_QUEUE_CONNECTION=redis
 STREAM_BACKUP_QUEUE=backups
+
+# Database dump driver: 'auto' (default), 'mysql', 'pgsql', 'sqlite'
+STREAM_BACKUP_DUMP_DRIVER=auto
 ```
+
+When set to `auto`, the dump driver is detected from your default Laravel database connection (`database.default`).
 
 ### DigitalOcean Spaces compatibility
 
@@ -76,6 +95,8 @@ Populate `config/stream-backup.php`:
 'tenants' => [
     ['connection' => 'tenant_1', 'database' => 'company_1', 'tenant_id' => 1],
     ['connection' => 'tenant_2', 'database' => 'company_2', 'tenant_id' => 2],
+    // Mixed database engines: override the driver per-tenant
+    ['connection' => 'pg_tenant', 'database' => 'orders', 'tenant_id' => 3, 'driver' => 'pgsql'],
 ],
 ```
 
@@ -85,6 +106,31 @@ Then:
 php artisan backup:all                     # enqueue every tenant
 php artisan backup:tenant 1                # single tenant by id
 php artisan backup:cleanup                 # apply retention policy
+```
+
+### Custom Dump Drivers
+
+Register custom drivers in your `AppServiceProvider` or a package service provider:
+
+```php
+use Ahmednour\StreamBackup\Dumpers\DumperFactory;
+
+public function boot(): void
+{
+    $this->app->make(DumperFactory::class)->extend('mongodb', function ($app) {
+        return new MongoDBDumper(/* ... */);
+    });
+}
+```
+
+Then reference the driver in config or per-tenant:
+
+```php
+// Global
+'dump' => ['driver' => 'mongodb'],
+
+// Per-tenant
+['connection' => 'mongo', 'database' => 'analytics', 'driver' => 'mongodb'],
 ```
 
 ### Scheduling
@@ -101,6 +147,10 @@ Add your own `backup:all` cadence to your app's scheduler.
 | Key | Default | Purpose |
 |---|---|---|
 | `default_disk` | `spaces` | Filesystem disk; must be S3-compatible |
+| `dump.driver` | `auto` | `auto`, `mysql`, `pgsql`, `sqlite`, or custom |
+| `dump.drivers.mysql.binary` | `mysqldump` | Path/name of the mysqldump binary |
+| `dump.drivers.pgsql.binary` | `pg_dump` | Path/name of the pg_dump binary |
+| `dump.drivers.sqlite.binary` | `sqlite3` | Path/name of the sqlite3 binary |
 | `compression.driver` | `pigz` | `pigz` (parallel) or `gzip` (single-threaded fallback) |
 | `compression.level` | `4` | Level 4 trades ~20% ratio for ~50% less CPU vs level 6 |
 | `multipart.part_size` | 32 MB | Must be ≥ 5 MB; keeps part count < 10 000 even at 300 GB |
@@ -115,10 +165,10 @@ Add your own `backup:all` cadence to your app's scheduler.
 ## Architecture
 
 ```
-mysqldump --single-transaction
+dump process (mysqldump / pg_dump / sqlite3)
    │ stdout (non-blocking)
    ▼
-  pigz -4
+  compressor (pigz / gzip)
    │ stdout (non-blocking)
    ▼
  ChecksumStream (SHA-256 tee)
@@ -127,12 +177,22 @@ mysqldump --single-transaction
  S3 multipart (32 MB parts, php://temp buffer)
 ```
 
-Key design points carried over from the review doc:
+### Design Patterns
+
+| Pattern | Where | Purpose |
+|---|---|---|
+| **Strategy** | `DatabaseDumper` interface + concrete dumpers | Swappable dump algorithms |
+| **Template Method** | `AbstractProcessDumper` | Shared proc_open boilerplate |
+| **Abstract Factory** | `DumperFactory` with `extend()` | Driver resolution + extensibility |
+| **Dependency Inversion** | `StreamPipeline` depends on `DumperFactory`, not concrete dumpers | Decoupled pipeline |
+| **Open/Closed** | New drivers = new class + `extend()` call, zero edits to existing code | Extensibility |
+
+### Key design points
 
 - **Write-side `stream_select`** with a `$pendingChunk` buffer — never busy-waits on blocked pipes.
-- **Exit-code validation before `completeMultipartUpload`** — refuses to commit objects when `mysqldump` or `pigz` exited non-zero or printed recognisable errors to stderr.
+- **Exit-code validation before `completeMultipartUpload`** — refuses to commit objects when the dump or compression process exited non-zero or printed recognisable errors to stderr.
 - **`php://temp` part buffer** — zero copy, spills to disk past 2 MB.
-- **`MySQLCredentialFile`** writes `~/.mysql-credentials-<uniqid>`, `chmod 0600`, unlinked in `register_shutdown_function` so a `kill -9` still cleans up.
+- **Secure credential handling** — MySQL: temp file with `chmod 0600`; PostgreSQL: `PGPASSWORD` env var; SQLite: no credentials needed.
 - **Redis-backed semaphore** via `Cache::lock()` prevents dozens of simultaneous dumps.
 - **State-machine enum** (`BackupStatus`) with explicit `canTransitionTo()` guards every model transition.
 - **SIGTERM handling** with `pcntl_async_signals(true)` inside `RunBackupJob` — in-flight multipart uploads are aborted on graceful shutdown.
@@ -142,11 +202,12 @@ Key design points carried over from the review doc:
 
 All of these are resolved from the container and can be swapped:
 
-- `BackupStream` — chunked non-blocking stream abstraction
-- `DatabaseDumper` — default is `MySQLDumper`
+- `DatabaseDumper` — default resolved by `DumperFactory` based on config
+- `DumperFactory` — singleton with `extend()` for custom drivers
 - `CompressionDriver` — `PigzDriver` or `GzipDriver`
 - `UploadDriver` — default is `S3MultipartUploader`
 - `TenantResolver` — `ConfigTenantResolver` when `tenants` is populated, `SingleDatabaseResolver` otherwise
+- `BackupStream` — chunked non-blocking stream abstraction
 
 ## Testing
 
@@ -157,13 +218,16 @@ composer install
 
 Unit tests cover:
 
+- `DumperFactory` (driver resolution, auto-detection, extend API, error handling)
+- `PostgreSQLDumper` (CLI args, PGPASSWORD env, password not in command)
+- `SQLiteDumper` (database path, file validation, .dump invocation)
 - `RetentionClassifier` (daily / weekly / monthly Sunday logic)
 - `BackupPathBuilder` (tenant-scoped and `_global` paths)
 - `BackupStatus` transitions (state-machine integrity)
 - `ChecksumStream` (SHA-256 equivalence to `hash('sha256', $payload)`)
 - `BackupSemaphore` (acquire / release / over-limit)
 
-The feature test `StreamPipelineSmokeTest` is auto-skipped unless `mysqldump` + `pigz` are on `PATH` and `STREAM_BACKUP_TEST_*` env vars are set.
+The feature test `StreamPipelineSmokeTest` is auto-skipped unless a dump tool + compressor are on `PATH` and `STREAM_BACKUP_TEST_*` env vars are set.
 
 ## License
 

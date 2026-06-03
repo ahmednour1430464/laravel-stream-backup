@@ -6,22 +6,21 @@ namespace Ahmednour\StreamBackup\Pipelines;
 
 use Ahmednour\StreamBackup\Contracts\BackupStream;
 use Ahmednour\StreamBackup\Contracts\CompressionDriver;
-use Ahmednour\StreamBackup\Contracts\DatabaseDumper;
 use Ahmednour\StreamBackup\Contracts\UploadDriver;
 use Ahmednour\StreamBackup\DTOs\BackupContext;
 use Ahmednour\StreamBackup\DTOs\BackupMetadata;
 use Ahmednour\StreamBackup\DTOs\UploadResult;
+use Ahmednour\StreamBackup\Dumpers\DumperFactory;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Streams\ChecksumStream;
 use Ahmednour\StreamBackup\Streams\ProcessBackupStream;
 use Ahmednour\StreamBackup\Uploaders\MultipartSession;
-use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Config\Repository as Config;
 
 /**
  * Non-blocking streaming pipeline:
  *
- *   mysqldump stdout -> pigz stdin -> pigz stdout -> S3 multipart upload
+ *   dump stdout -> compress stdin -> compress stdout -> S3 multipart upload
  *
  * Key design choices (ported from the hardened backup.php prototype):
  *
@@ -36,13 +35,17 @@ use Illuminate\Contracts\Config\Repository as Config;
  *    to uploadPart as a stream resource so no 32 MB string copy.
  *
  * 4. Exit-code check BEFORE completeMultipartUpload: otherwise a
- *    mid-stream mysqldump failure would produce a completed-but-corrupt
+ *    mid-stream dump failure would produce a completed-but-corrupt
  *    gzip on S3 that we can no longer abort.
+ *
+ * 5. Per-context dumper resolution via DumperFactory: in multi-tenant
+ *    setups, different tenants may use different databases. The dumper
+ *    is resolved per-run from BackupContext::$driver.
  */
 final class StreamPipeline
 {
     public function __construct(
-        private readonly DatabaseDumper $dumper,
+        private readonly DumperFactory $dumperFactory,
         private readonly CompressionDriver $compression,
         private readonly UploadDriver $uploader,
         private readonly Config $config,
@@ -54,35 +57,42 @@ final class StreamPipeline
         $readChunk = (int) $this->config->get('stream-backup.read_chunk', 64 * 1024);
         $partSize  = (int) $this->config->get('stream-backup.multipart.part_size', 32 * 1024 * 1024);
 
-        // 1. Start mysqldump and wrap its stdout as a BackupStream.
-        $dumpStream = $this->dumper->dump($context);
-        if (! $dumpStream instanceof ProcessBackupStream) {
-            throw new PipelineException('MySQLDumper must return a ProcessBackupStream.');
-        }
-        [$dumpProc, $dumpStdout, $dumpStderr] = $this->extractPipes($dumpStream);
+        // 1. Resolve the correct dumper for this context's driver.
+        $dumper = $this->dumperFactory->make($context->driver);
 
-        // 2. Start pigz.
+        // 2. Start the dump and extract raw pipes for stream_select().
+        $dumpStream = $dumper->dump($context);
+        if (! $dumpStream instanceof ProcessBackupStream) {
+            throw new PipelineException(
+                sprintf('%s must return a ProcessBackupStream.', $dumper->name())
+            );
+        }
+        $pipes = $dumpStream->pipes();
+        $dumpProc   = $pipes->process;
+        $dumpStdout = $pipes->stdout;
+
+        // 3. Start the compressor.
         [$pigzProc, $pigzStdin, $pigzStdout, $pigzStderr] = $this->spawnCompressor();
 
-        // 3. Create a ProcessBackupStream wrapper for pigz so close() can
-        //    validate its exit code, and tee it through a ChecksumStream
+        // 4. Create a ProcessBackupStream wrapper for the compressor so close()
+        //    can validate its exit code, and tee it through a ChecksumStream
         //    so the SHA-256 is computed during upload.
-        $pigzBackupStream = new ProcessBackupStream($pigzProc, $pigzStdout, $pigzStderr, 'pigz');
+        $pigzBackupStream = new ProcessBackupStream($pigzProc, $pigzStdout, $pigzStderr, $this->compression->name());
         $compressedStream = new ChecksumStream($pigzBackupStream);
 
-        // 4. Initiate the multipart upload (persists UploadId to the backups row).
+        // 5. Initiate the multipart upload (persists UploadId to the backups row).
         $session = $this->uploader->initiate($metadata);
 
-        // 5. Allocate the streaming part buffer once.
+        // 6. Allocate the streaming part buffer once.
         $partBuffer = fopen('php://temp', 'r+b');
         $bufferSize = 0;
         $partNumber = 1;
 
-        // 6. Pipeline state.
-        $pendingChunk    = '';   // bytes waiting to be written into pigz stdin
-        $dumpDone        = false; // mysqldump stdout closed
-        $pigzInputClosed = false; // pigz stdin closed (EOF signalled)
-        $pigzDone        = false; // pigz stdout closed
+        // 7. Pipeline state.
+        $pendingChunk    = '';    // bytes waiting to be written into compressor stdin
+        $dumpDone        = false; // dump stdout closed
+        $pigzInputClosed = false; // compressor stdin closed (EOF signalled)
+        $pigzDone        = false; // compressor stdout closed
 
         $startedAt = microtime(true);
 
@@ -92,7 +102,7 @@ final class StreamPipeline
                 $write = [];
                 $except = null;
 
-                // Read from mysqldump only when we have room to buffer.
+                // Read from dump only when we have room to buffer.
                 if (! $dumpDone && $pendingChunk === '') {
                     $read[] = $dumpStdout;
                 }
@@ -100,7 +110,7 @@ final class StreamPipeline
                     $read[] = $pigzStdout;
                 }
 
-                // Write side: only register pigz stdin when there's data queued.
+                // Write side: only register compressor stdin when there's data queued.
                 if ($pendingChunk !== '') {
                     $write[] = $pigzStdin;
                 }
@@ -120,7 +130,7 @@ final class StreamPipeline
                     throw new PipelineException('stream_select failed.');
                 }
 
-                // ---- mysqldump stdout ----
+                // ---- dump stdout ----
                 if (! $dumpDone && in_array($dumpStdout, $read, true)) {
                     $chunk = $dumpStream->read($readChunk);
 
@@ -131,11 +141,11 @@ final class StreamPipeline
                     }
                 }
 
-                // ---- pigz stdin (write side) ----
+                // ---- compressor stdin (write side) ----
                 if ($pendingChunk !== '' && in_array($pigzStdin, $write, true)) {
                     $written = @fwrite($pigzStdin, $pendingChunk);
                     if ($written === false) {
-                        throw new PipelineException('Failed to write to pigz stdin.');
+                        throw new PipelineException('Failed to write to compressor stdin.');
                     }
                     if ($written > 0) {
                         $pendingChunk = substr($pendingChunk, $written);
@@ -143,13 +153,13 @@ final class StreamPipeline
                 }
 
                 // If the dump is fully drained AND the pending buffer has been
-                // flushed, signal EOF to pigz by closing its stdin.
+                // flushed, signal EOF to the compressor by closing its stdin.
                 if ($dumpDone && $pendingChunk === '' && ! $pigzInputClosed) {
                     @fclose($pigzStdin);
                     $pigzInputClosed = true;
                 }
 
-                // ---- pigz stdout ----
+                // ---- compressor stdout ----
                 if (! $pigzDone && in_array($pigzStdout, $read, true)) {
                     $compressed = $compressedStream->read($readChunk);
 
@@ -176,7 +186,7 @@ final class StreamPipeline
             // Validate BOTH processes BEFORE completing the upload so a
             // mid-stream failure never produces a completed object.
             $dumpStream->close();       // throws on non-zero exit / stderr errors
-            $compressedStream->close(); // closes pigz stream and validates pigz
+            $compressedStream->close(); // closes compressor stream and validates exit
 
             $result = $this->uploader->complete($session);
 
@@ -214,28 +224,6 @@ final class StreamPipeline
         // Reuse the same stream instead of re-opening: O(1), no allocation.
         ftruncate($buffer, 0);
         rewind($buffer);
-    }
-
-    /**
-     * Reach into ProcessBackupStream to recover the raw pipes. The Pipeline
-     * needs them for stream_select; the stream itself only exposes a
-     * non-blocking read API.
-     *
-     * @return array{0: resource, 1: resource, 2: resource}
-     */
-    private function extractPipes(ProcessBackupStream $stream): array
-    {
-        $ref = new \ReflectionClass($stream);
-
-        $process = $ref->getProperty('process'); $process->setAccessible(true);
-        $stdout  = $ref->getProperty('stdout');  $stdout->setAccessible(true);
-        $stderr  = $ref->getProperty('stderr');  $stderr->setAccessible(true);
-
-        return [
-            $process->getValue($stream),
-            $stdout->getValue($stream),
-            $stderr->getValue($stream),
-        ];
     }
 
     /**

@@ -120,6 +120,17 @@ final class ProcessBackupStream implements BackupStream
         return $this->stderrBuffer;
     }
 
+    /**
+     * Expose the raw process and pipe resources for stream_select().
+     *
+     * This replaces the Reflection-based extractPipes() hack in
+     * StreamPipeline, restoring Liskov compliance for BackupStream.
+     */
+    public function pipes(): PipeSet
+    {
+        return new PipeSet($this->process, $this->stdout, $this->stderr);
+    }
+
     private function drainStderr(): void
     {
         if (! is_resource($this->stderr)) {

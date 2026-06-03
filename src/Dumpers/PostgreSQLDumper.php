@@ -8,25 +8,21 @@ use Ahmednour\StreamBackup\DTOs\BackupContext;
 use Ahmednour\StreamBackup\DTOs\DatabaseCredentials;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Support\BinaryLocator;
-use Ahmednour\StreamBackup\Support\MySQLCredentialFile;
 use Illuminate\Contracts\Config\Repository as Config;
 
 /**
- * MySQL dump driver using mysqldump.
+ * PostgreSQL dump driver using pg_dump.
  *
- * Credentials are written to a temporary file passed via
- * --defaults-extra-file so the password never appears on the
- * command line (which would leak via `ps aux`).
- *
- * Extends AbstractProcessDumper via the Template Method pattern —
- * all proc_open boilerplate lives in the base class.
+ * Credentials are passed via the PGPASSWORD environment variable —
+ * the password never appears on the command line or in `ps aux`.
+ * This follows PostgreSQL's own recommended practice for non-interactive
+ * authentication in scripted environments.
  */
-final class MySQLDumper extends AbstractProcessDumper
+final class PostgreSQLDumper extends AbstractProcessDumper
 {
     public function __construct(
         BinaryLocator $locator,
         Config $config,
-        private readonly MySQLCredentialFile $credentialFile,
     ) {
         parent::__construct($locator, $config);
     }
@@ -34,38 +30,56 @@ final class MySQLDumper extends AbstractProcessDumper
     protected function buildCommand(BackupContext $context): array
     {
         $credentials = $this->resolveCredentials($context);
-        $cnfPath     = $this->credentialFile->write($credentials);
-
-        // Backward compat: check the old key first, then the new per-driver key.
         $binary = $this->locator->locate(
-            $this->config->get(
-                'stream-backup.dump.drivers.mysql.binary',
-                $this->config->get('stream-backup.dump.binary', 'mysqldump'),
-            )
+            $this->config->get('stream-backup.dump.drivers.pgsql.binary', 'pg_dump')
         );
 
         return array_merge(
             [
                 $binary,
-                '--defaults-extra-file=' . $cnfPath,
-                '--single-transaction',
-                '--quick',
-                '--skip-lock-tables',
+                '-h', $credentials->host,
+                '-p', (string) $credentials->port,
+                '-U', $credentials->username,
+                '-d', $credentials->database,
+                '--no-password',  // fail rather than prompt
+                '-F', 'p',       // plain SQL format (pipeable)
             ],
             (array) $this->config->get('stream-backup.dump.extra_flags', []),
             $context->extraDumpFlags,
-            [$credentials->database],
         );
+    }
+
+    /**
+     * Pass credentials via PGPASSWORD environment variable.
+     *
+     * Inherits the full parent environment and adds PGPASSWORD so that
+     * pg_dump authenticates without the password appearing in the process
+     * list or command line.
+     *
+     * @return array<string, string>
+     */
+    protected function buildEnvironment(BackupContext $context): array
+    {
+        $credentials = $this->resolveCredentials($context);
+
+        // Inherit parent environment and inject PGPASSWORD
+        $env = getenv();
+        if (! is_array($env)) {
+            $env = [];
+        }
+        $env['PGPASSWORD'] = $credentials->password;
+
+        return $env;
     }
 
     public function name(): string
     {
-        return 'mysqldump';
+        return 'pg_dump';
     }
 
     private function resolveCredentials(BackupContext $context): DatabaseCredentials
     {
-        $key = "database.connections.{$context->connectionName}";
+        $key  = "database.connections.{$context->connectionName}";
         $conn = (array) $this->config->get($key, []);
 
         if ($conn === []) {
@@ -77,7 +91,7 @@ final class MySQLDumper extends AbstractProcessDumper
 
         return new DatabaseCredentials(
             host:     (string) ($conn['host']     ?? '127.0.0.1'),
-            port:     (int)    ($conn['port']     ?? 3306),
+            port:     (int)    ($conn['port']     ?? 5432),
             database: $context->databaseName,
             username: (string) ($conn['username'] ?? ''),
             password: (string) ($conn['password'] ?? ''),

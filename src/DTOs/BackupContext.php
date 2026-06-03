@@ -17,6 +17,7 @@ final class BackupContext
         public readonly int $timeoutSeconds = 0,
         public readonly array $extraDumpFlags = [],
         public readonly ?int $backupId = null,
+        public readonly ?string $driver = null, // null = use global config / auto-detect
     ) {
     }
 
@@ -30,6 +31,7 @@ final class BackupContext
             timeoutSeconds:  $this->timeoutSeconds,
             extraDumpFlags:  $this->extraDumpFlags,
             backupId:        $id,
+            driver:          $this->driver,
         );
     }
 }

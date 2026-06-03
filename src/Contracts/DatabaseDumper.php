@@ -14,4 +14,9 @@ interface DatabaseDumper
      * dump process exit code.
      */
     public function dump(BackupContext $context): BackupStream;
+
+    /**
+     * Human-readable label for error messages and log entries.
+     */
+    public function name(): string;
 }

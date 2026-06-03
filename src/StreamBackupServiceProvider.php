@@ -13,7 +13,7 @@ use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\Contracts\DatabaseDumper;
 use Ahmednour\StreamBackup\Contracts\TenantResolver;
 use Ahmednour\StreamBackup\Contracts\UploadDriver;
-use Ahmednour\StreamBackup\Dumpers\MySQLDumper;
+use Ahmednour\StreamBackup\Dumpers\DumperFactory;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
 use Ahmednour\StreamBackup\Jobs\AbortStaleMultipartUploads;
 use Ahmednour\StreamBackup\Jobs\BackupCleanupJob;
@@ -44,9 +44,13 @@ class StreamBackupServiceProvider extends ServiceProvider
         $this->app->singleton(MySQLCredentialFile::class);
 
         $this->app->singleton(BinaryLocator::class, function ($app) {
-            $config = $app->make(Config::class);
+            $config  = $app->make(Config::class);
+            $drivers = (array) $config->get('stream-backup.dump.drivers', []);
+
             return new BinaryLocator([
-                'mysqldump' => (string) $config->get('stream-backup.dump.binary', 'mysqldump'),
+                'mysqldump' => (string) ($drivers['mysql']['binary']  ?? 'mysqldump'),
+                'pg_dump'   => (string) ($drivers['pgsql']['binary']  ?? 'pg_dump'),
+                'sqlite3'   => (string) ($drivers['sqlite']['binary'] ?? 'sqlite3'),
             ]);
         });
 
@@ -99,8 +103,20 @@ class StreamBackupServiceProvider extends ServiceProvider
             };
         });
 
-        // Dumper and uploader
-        $this->app->bind(DatabaseDumper::class, MySQLDumper::class);
+        // DumperFactory — singleton so extend() registrations persist.
+        // Third-party packages call DumperFactory::extend() in their
+        // ServiceProvider::boot() to register custom drivers (OCP).
+        $this->app->singleton(DumperFactory::class);
+
+        // DatabaseDumper resolves through the factory (global default).
+        // StreamPipeline uses DumperFactory directly for per-context
+        // resolution, but this binding exists for any code that injects
+        // the DatabaseDumper contract directly.
+        $this->app->bind(DatabaseDumper::class, function ($app) {
+            return $app->make(DumperFactory::class)->make();
+        });
+
+        // Uploader
         $this->app->bind(UploadDriver::class, S3MultipartUploader::class);
 
         // Tenant resolver: if the tenants array is empty, fall back to a

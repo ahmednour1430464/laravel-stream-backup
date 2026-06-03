@@ -1,9 +1,9 @@
 {
     "name": "ahmednour1430464/laravel-stream-backup",
-    "description": "Streaming MySQL backup package for Laravel: mysqldump -> pigz -> S3 multipart upload with constant memory use.",
+    "description": "Streaming database backup for Laravel: dump → compress → S3 multipart upload with constant memory use. Supports MySQL, PostgreSQL, SQLite, and custom drivers.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "mysql", "backup", "streaming", "s3", "digitalocean-spaces", "mysqldump", "pigz"],
+    "keywords": ["laravel", "backup", "streaming", "s3", "digitalocean-spaces", "mysql", "postgresql", "sqlite", "pg_dump", "mysqldump", "pigz", "multi-driver"],
     "authors": [
         {
             "name": "ahmednour",
