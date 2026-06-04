@@ -15,12 +15,12 @@ class DefaultNotifiable
     {
     }
 
-    public function routeNotificationForMail(): ?string
+    public function routeNotificationForMail(): string|array|null
     {
         return $this->config->get('stream-backup.notifications.mail.to');
     }
 
-    public function routeNotificationForSlack(): ?string
+    public function routeNotificationForSlack(): string|array|null
     {
         return $this->config->get('stream-backup.notifications.slack.webhook_url');
     }
