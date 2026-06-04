@@ -43,12 +43,29 @@ final class BackupVerifier
         ]);
 
         $magic = (string) $range['Body'];
+        $driver = $backup->encryption_driver;
 
-        if (strlen($magic) < 2 || $magic[0] !== "\x1f" || $magic[1] !== "\x8b") {
-            throw new \RuntimeException(sprintf(
-                'Backup %s does not start with the gzip magic bytes; the object is likely corrupt.',
-                $backup->path,
-            ));
+        if ($driver === null || $driver === 'none') {
+            if (strlen($magic) < 2 || $magic[0] !== "\x1f" || $magic[1] !== "\x8b") {
+                throw new \RuntimeException(sprintf(
+                    'Backup %s does not start with the gzip magic bytes; the object is likely corrupt.',
+                    $backup->path,
+                ));
+            }
+        } elseif ($driver === 'openssl-aes-256-gcm') {
+            if (strlen($magic) < 1 || $magic[0] !== "\x01") {
+                throw new \RuntimeException(sprintf(
+                    'Backup %s is encrypted with openssl-aes-256-gcm but does not start with the expected version byte; the object is likely corrupt.',
+                    $backup->path,
+                ));
+            }
+        } elseif ($driver === 'sodium') {
+            if (strlen($magic) < 1 || $magic[0] !== "\x02") {
+                throw new \RuntimeException(sprintf(
+                    'Backup %s is encrypted with sodium but does not start with the expected version byte; the object is likely corrupt.',
+                    $backup->path,
+                ));
+            }
         }
     }
 
