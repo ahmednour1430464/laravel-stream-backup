@@ -6,7 +6,9 @@ namespace Ahmednour\StreamBackup\Encryption;
 
 use Ahmednour\StreamBackup\Contracts\BackupStream;
 use Ahmednour\StreamBackup\Contracts\EncryptionDriver;
+use Ahmednour\StreamBackup\Contracts\VerifiesMagicBytes;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
+use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Streams\OpenSslEncryptionStream;
 
 /**
@@ -30,7 +32,7 @@ use Ahmednour\StreamBackup\Streams\OpenSslEncryptionStream;
  * Generate a key:
  *   php -r "echo base64_encode(random_bytes(32));"
  */
-final class OpenSslAes256GcmDriver implements EncryptionDriver
+final class OpenSslAes256GcmDriver implements EncryptionDriver, VerifiesMagicBytes
 {
     public function spawn(BackupStream $inner, string $key): BackupStream
     {
@@ -62,5 +64,20 @@ final class OpenSslAes256GcmDriver implements EncryptionDriver
     public function keyLength(): int
     {
         return 32; // 256 bits
+    }
+
+    public function magicBytesLength(): int
+    {
+        return 1;
+    }
+
+    public function verifyMagicBytes(string $magic, Backup $backup): void
+    {
+        if (strlen($magic) < 1 || $magic[0] !== "\x01") {
+            throw new \RuntimeException(sprintf(
+                'Backup %s is encrypted with openssl-aes-256-gcm but does not start with the expected version byte; the object is likely corrupt.',
+                $backup->path,
+            ));
+        }
     }
 }

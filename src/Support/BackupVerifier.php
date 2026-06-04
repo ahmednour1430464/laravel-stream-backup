@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ahmednour\StreamBackup\Support;
 
+use Ahmednour\StreamBackup\Contracts\VerifiesMagicBytes;
+use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
 use Ahmednour\StreamBackup\Models\Backup;
 use Aws\S3\S3ClientInterface;
 
@@ -14,8 +16,10 @@ use Aws\S3\S3ClientInterface;
  */
 final class BackupVerifier
 {
-    public function __construct(private readonly S3ClientInterface $s3)
-    {
+    public function __construct(
+        private readonly S3ClientInterface $s3,
+        private readonly EncryptionFactory $encryptionFactory,
+    ) {
     }
 
     public function verify(Backup $backup): void
@@ -36,35 +40,20 @@ final class BackupVerifier
             ));
         }
 
-        $range = $this->s3->getObject([
-            'Bucket' => $this->bucket($backup),
-            'Key'    => $backup->path,
-            'Range'  => 'bytes=0-1',
-        ]);
+        $driver = $this->encryptionFactory->make($backup->encryption_driver);
 
-        $magic = (string) $range['Body'];
-        $driver = $backup->encryption_driver;
+        if ($driver instanceof VerifiesMagicBytes) {
+            $length = $driver->magicBytesLength();
 
-        if ($driver === null || $driver === 'none') {
-            if (strlen($magic) < 2 || $magic[0] !== "\x1f" || $magic[1] !== "\x8b") {
-                throw new \RuntimeException(sprintf(
-                    'Backup %s does not start with the gzip magic bytes; the object is likely corrupt.',
-                    $backup->path,
-                ));
-            }
-        } elseif ($driver === 'openssl-aes-256-gcm') {
-            if (strlen($magic) < 1 || $magic[0] !== "\x01") {
-                throw new \RuntimeException(sprintf(
-                    'Backup %s is encrypted with openssl-aes-256-gcm but does not start with the expected version byte; the object is likely corrupt.',
-                    $backup->path,
-                ));
-            }
-        } elseif ($driver === 'sodium') {
-            if (strlen($magic) < 1 || $magic[0] !== "\x02") {
-                throw new \RuntimeException(sprintf(
-                    'Backup %s is encrypted with sodium but does not start with the expected version byte; the object is likely corrupt.',
-                    $backup->path,
-                ));
+            if ($length > 0) {
+                $range = $this->s3->getObject([
+                    'Bucket' => $this->bucket($backup),
+                    'Key'    => $backup->path,
+                    'Range'  => 'bytes=0-' . ($length - 1),
+                ]);
+
+                $magic = (string) $range['Body'];
+                $driver->verifyMagicBytes($magic, $backup);
             }
         }
     }

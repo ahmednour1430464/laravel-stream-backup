@@ -6,7 +6,9 @@ namespace Ahmednour\StreamBackup\Encryption;
 
 use Ahmednour\StreamBackup\Contracts\BackupStream;
 use Ahmednour\StreamBackup\Contracts\EncryptionDriver;
+use Ahmednour\StreamBackup\Contracts\VerifiesMagicBytes;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
+use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Streams\SodiumEncryptionStream;
 
 /**
@@ -29,7 +31,7 @@ use Ahmednour\StreamBackup\Streams\SodiumEncryptionStream;
  * Generate a key:
  *   php -r "echo base64_encode(random_bytes(32));"
  */
-final class SodiumDriver implements EncryptionDriver
+final class SodiumDriver implements EncryptionDriver, VerifiesMagicBytes
 {
     public function spawn(BackupStream $inner, string $key): BackupStream
     {
@@ -61,5 +63,20 @@ final class SodiumDriver implements EncryptionDriver
     public function keyLength(): int
     {
         return SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_KEYBYTES; // 32
+    }
+
+    public function magicBytesLength(): int
+    {
+        return 1;
+    }
+
+    public function verifyMagicBytes(string $magic, Backup $backup): void
+    {
+        if (strlen($magic) < 1 || $magic[0] !== "\x02") {
+            throw new \RuntimeException(sprintf(
+                'Backup %s is encrypted with sodium but does not start with the expected version byte; the object is likely corrupt.',
+                $backup->path,
+            ));
+        }
     }
 }

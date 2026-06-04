@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ahmednour\StreamBackup\Tests\Unit;
 
+use Ahmednour\StreamBackup\Contracts\BackupStream;
+use Ahmednour\StreamBackup\Contracts\EncryptionDriver;
+use Ahmednour\StreamBackup\Contracts\VerifiesMagicBytes;
+use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
 use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Support\BackupVerifier;
 use Ahmednour\StreamBackup\Tests\TestCase;
@@ -28,10 +32,15 @@ final class BackupVerifierTest extends TestCase
         return $s3;
     }
 
+    private function createVerifier(S3ClientInterface $s3): BackupVerifier
+    {
+        return new BackupVerifier($s3, $this->app->make(EncryptionFactory::class));
+    }
+
     public function test_throws_on_size_mismatch(): void
     {
         $s3 = $this->createS3Mock(500, "\x1f\x8b");
-        $verifier = new BackupVerifier($s3);
+        $verifier = $this->createVerifier($s3);
 
         $backup = new Backup([
             'path' => 'test.sql.gz',
@@ -49,7 +58,7 @@ final class BackupVerifierTest extends TestCase
     public function test_unencrypted_passes_with_correct_magic_bytes(): void
     {
         $s3 = $this->createS3Mock(1000, "\x1f\x8b");
-        $verifier = new BackupVerifier($s3);
+        $verifier = $this->createVerifier($s3);
 
         $backup = new Backup([
             'path' => 'test.sql.gz',
@@ -65,7 +74,7 @@ final class BackupVerifierTest extends TestCase
     public function test_unencrypted_throws_with_incorrect_magic_bytes(): void
     {
         $s3 = $this->createS3Mock(1000, "\x00\x00");
-        $verifier = new BackupVerifier($s3);
+        $verifier = $this->createVerifier($s3);
 
         $backup = new Backup([
             'path' => 'test.sql.gz',
@@ -83,7 +92,7 @@ final class BackupVerifierTest extends TestCase
     public function test_openssl_passes_with_correct_version_byte(): void
     {
         $s3 = $this->createS3Mock(1000, "\x01\xff");
-        $verifier = new BackupVerifier($s3);
+        $verifier = $this->createVerifier($s3);
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -99,7 +108,7 @@ final class BackupVerifierTest extends TestCase
     public function test_openssl_throws_with_incorrect_version_byte(): void
     {
         $s3 = $this->createS3Mock(1000, "\x02\xff");
-        $verifier = new BackupVerifier($s3);
+        $verifier = $this->createVerifier($s3);
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -117,7 +126,7 @@ final class BackupVerifierTest extends TestCase
     public function test_sodium_passes_with_correct_version_byte(): void
     {
         $s3 = $this->createS3Mock(1000, "\x02\xff");
-        $verifier = new BackupVerifier($s3);
+        $verifier = $this->createVerifier($s3);
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -133,7 +142,7 @@ final class BackupVerifierTest extends TestCase
     public function test_sodium_throws_with_incorrect_version_byte(): void
     {
         $s3 = $this->createS3Mock(1000, "\x01\xff");
-        $verifier = new BackupVerifier($s3);
+        $verifier = $this->createVerifier($s3);
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -148,10 +157,19 @@ final class BackupVerifierTest extends TestCase
         $verifier->verify($backup);
     }
 
-    public function test_custom_driver_bypasses_magic_bytes_check(): void
+    public function test_custom_driver_without_interface_bypasses_magic_bytes_check(): void
     {
+        $factory = $this->app->make(EncryptionFactory::class);
+        $factory->extend('custom-driver', function () {
+            return new class implements EncryptionDriver {
+                public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
+                public function name(): string { return 'custom-driver'; }
+                public function keyLength(): int { return 0; }
+            };
+        });
+
         $s3 = $this->createS3Mock(1000, "anything");
-        $verifier = new BackupVerifier($s3);
+        $verifier = new BackupVerifier($s3, $factory);
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -163,5 +181,38 @@ final class BackupVerifierTest extends TestCase
         // Should not throw exception
         $verifier->verify($backup);
         $this->assertTrue(true); // Verification passed
+    }
+
+    public function test_custom_driver_with_interface_performs_check(): void
+    {
+        $factory = $this->app->make(EncryptionFactory::class);
+        $factory->extend('custom-verifiable-driver', function () {
+            return new class implements EncryptionDriver, VerifiesMagicBytes {
+                public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
+                public function name(): string { return 'custom-verifiable-driver'; }
+                public function keyLength(): int { return 0; }
+                public function magicBytesLength(): int { return 3; }
+                public function verifyMagicBytes(string $magic, Backup $backup): void {
+                    if ($magic !== 'ABC') {
+                        throw new \RuntimeException('Custom invalid magic!');
+                    }
+                }
+            };
+        });
+
+        $s3 = $this->createS3Mock(1000, "XYZ");
+        $verifier = new BackupVerifier($s3, $factory);
+
+        $backup = new Backup([
+            'path' => 'test.sql.gz.enc',
+            'disk' => 's3',
+            'size' => 1000,
+            'encryption_driver' => 'custom-verifiable-driver',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Custom invalid magic!');
+
+        $verifier->verify($backup);
     }
 }
