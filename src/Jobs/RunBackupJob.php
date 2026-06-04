@@ -15,6 +15,12 @@ use Ahmednour\StreamBackup\Pipelines\StreamPipeline;
 use Ahmednour\StreamBackup\Support\BackupPathBuilder;
 use Ahmednour\StreamBackup\Support\BackupSemaphore;
 use Ahmednour\StreamBackup\Support\BackupVerifier;
+use Ahmednour\StreamBackup\Events\BackupFailed as BackupFailedEvent;
+use Ahmednour\StreamBackup\Events\BackupStarting;
+use Ahmednour\StreamBackup\Notifications\BackupFailed as BackupFailedNotification;
+use Ahmednour\StreamBackup\Notifications\BackupSuccessful;
+use Ahmednour\StreamBackup\Support\NotificationManager;
+use Ahmednour\StreamBackup\Support\PreflightChecker;
 use Ahmednour\StreamBackup\Support\RetentionClassifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
@@ -54,6 +60,8 @@ class RunBackupJob implements ShouldQueue
         EncryptionFactory $encryptionFactory,
         RetentionClassifier $classifier,
         BackupVerifier $verifier,
+        NotificationManager $notificationManager,
+        PreflightChecker $preflightChecker,
         Config $config,
     ): void {
         // SIGTERM handling: Supervisor sends SIGTERM on graceful stop. We
@@ -85,6 +93,9 @@ class RunBackupJob implements ShouldQueue
             'encryption_driver'  => $encryption->name() !== 'none' ? $encryption->name() : null,
             'started_at'         => $startedAt,
         ]);
+
+        BackupStarting::dispatch($this->context, $backup);
+        $preflightChecker->check($this->context->disk);
 
         $extension = $encryption->name() !== 'none' ? 'sql.gz.enc' : 'sql.gz';
         $path      = $pathBuilder->build($this->context, $startedAt, $extension);
@@ -133,6 +144,8 @@ class RunBackupJob implements ShouldQueue
                 'finished_at' => $finishedAt,
                 'duration'    => $finishedAt->getTimestamp() - $startedAt->getTimestamp(),
             ]);
+
+            $notificationManager->notify(new BackupSuccessful($backup));
         } catch (\Throwable $e) {
             Log::error('stream-backup job failed', [
                 'backup_id' => $backup->id,
@@ -151,6 +164,11 @@ class RunBackupJob implements ShouldQueue
                     'error_message' => $e->getMessage(),
                     'finished_at'   => now(),
                 ])->save();
+            }
+
+            if (! $aborted) {
+                BackupFailedEvent::dispatch($this->context, $e);
+                $notificationManager->notify(new BackupFailedNotification($backup, $e->getMessage()));
             }
 
             throw $e;

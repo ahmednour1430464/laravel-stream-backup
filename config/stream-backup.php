@@ -218,4 +218,30 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications & Alerting
+    |--------------------------------------------------------------------------
+    |
+    | By default, no notifications are sent. To enable notifications, you can
+    | specify a Notifiable class that resolves the channels you want to use.
+    |
+    | The package comes with a DefaultNotifiable that routes to 'mail' or 'slack'
+    | if their respective configurations are present below.
+    |
+    | Example custom notifiable: App\Models\User::class
+    |
+    */
+    'notifications' => [
+        'notifiable' => null, // e.g. \Ahmednour\StreamBackup\Support\DefaultNotifiable::class
+
+        'mail' => [
+            'to' => env('STREAM_BACKUP_MAIL_TO'),
+        ],
+
+        'slack' => [
+            'webhook_url' => env('STREAM_BACKUP_SLACK_WEBHOOK'),
+        ],
+    ],
+
 ];

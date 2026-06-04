@@ -12,6 +12,9 @@ use Ahmednour\StreamBackup\DTOs\BackupMetadata;
 use Ahmednour\StreamBackup\DTOs\UploadResult;
 use Ahmednour\StreamBackup\Dumpers\DumperFactory;
 use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
+use Ahmednour\StreamBackup\Events\CompressionCompleted;
+use Ahmednour\StreamBackup\Events\DatabaseDumped;
+use Ahmednour\StreamBackup\Events\UploadFinished;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Streams\ChecksumStream;
 use Ahmednour\StreamBackup\Streams\ProcessBackupStream;
@@ -194,13 +197,15 @@ final class StreamPipeline
             // Validate BOTH processes BEFORE completing the upload so a
             // mid-stream failure never produces a completed object.
             $dumpStream->close();       // throws on non-zero exit / stderr errors
+            DatabaseDumped::dispatch($context);
+
             $compressedStream->close(); // closes compressor stream and validates exit
+            CompressionCompleted::dispatch($context);
 
             $result = $this->uploader->complete($session);
-
+            
             $duration = microtime(true) - $startedAt;
-
-            return new UploadResult(
+            $uploadResult = new UploadResult(
                 bucket:          $result->bucket,
                 key:             $result->key,
                 sizeBytes:       $result->sizeBytes,
@@ -208,6 +213,10 @@ final class StreamPipeline
                 durationSeconds: $duration,
                 checksum:        $compressedStream->checksum(),
             );
+
+            UploadFinished::dispatch($context, $uploadResult);
+
+            return $uploadResult;
         } catch (\Throwable $e) {
             // Best-effort cleanup: abort multipart and terminate processes.
             $this->uploader->abort($session);
