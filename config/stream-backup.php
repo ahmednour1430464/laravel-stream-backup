@@ -32,6 +32,37 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Encryption (Optional — Enterprise)
+    |--------------------------------------------------------------------------
+    |
+    | Encrypts the compressed stream before it leaves the server.
+    | Pipeline with encryption: mysqldump → pigz → encrypt → SHA-256 → S3
+    |
+    | driver:    'none'                  — disabled (default, zero overhead)
+    |            'openssl-aes-256-gcm'   — AES-256-GCM, requires ext-openssl
+    |            'sodium'                — XChaCha20-Poly1305, requires ext-sodium
+    |            any string registered via EncryptionFactory::extend()
+    |
+    | key:       Base64-encoded 32-byte raw key (set via env var).
+    |            Generate: php -r "echo base64_encode(random_bytes(32));"
+    |
+    | key_file:  Absolute path to a file containing the raw binary key (32 bytes).
+    |            'key' env var takes precedence when both are set.
+    |
+    | ⚠ WARNING: Losing the encryption key makes ALL encrypted backups
+    |   permanently unrecoverable. Store it in AWS Secrets Manager,
+    |   HashiCorp Vault, or an equivalent secrets manager.
+    |   This package will never generate, store, or log key material.
+    |
+    */
+    'encryption' => [
+        'driver'   => env('STREAM_BACKUP_ENCRYPTION_DRIVER', 'none'),
+        'key'      => env('STREAM_BACKUP_ENCRYPTION_KEY'),
+        'key_file' => env('STREAM_BACKUP_ENCRYPTION_KEY_FILE'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Database dump
     |--------------------------------------------------------------------------
     |

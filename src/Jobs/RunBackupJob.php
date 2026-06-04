@@ -8,6 +8,7 @@ use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\DTOs\BackupContext;
 use Ahmednour\StreamBackup\DTOs\BackupMetadata;
 use Ahmednour\StreamBackup\Dumpers\DumperFactory;
+use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
 use Ahmednour\StreamBackup\Enums\BackupStatus;
 use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Pipelines\StreamPipeline;
@@ -50,6 +51,7 @@ class RunBackupJob implements ShouldQueue
         BackupSemaphore $semaphore,
         CompressionDriver $compression,
         DumperFactory $dumperFactory,
+        EncryptionFactory $encryptionFactory,
         RetentionClassifier $classifier,
         BackupVerifier $verifier,
         Config $config,
@@ -70,8 +72,9 @@ class RunBackupJob implements ShouldQueue
             return;
         }
 
-        $startedAt = CarbonImmutable::now();
-        $dumper    = $dumperFactory->make($this->context->driver);
+        $startedAt  = CarbonImmutable::now();
+        $dumper     = $dumperFactory->make($this->context->driver);
+        $encryption = $encryptionFactory->make();
         $backup = Backup::create([
             'tenant_id'          => $this->context->tenantId,
             'database_name'      => $this->context->databaseName,
@@ -79,10 +82,12 @@ class RunBackupJob implements ShouldQueue
             'status'             => BackupStatus::Pending->value,
             'compression_driver' => $compression->name(),
             'dump_driver'        => $dumper->name(),
+            'encryption_driver'  => $encryption->name() !== 'none' ? $encryption->name() : null,
             'started_at'         => $startedAt,
         ]);
 
-        $path = $pathBuilder->build($this->context, $startedAt);
+        $extension = $encryption->name() !== 'none' ? 'sql.gz.enc' : 'sql.gz';
+        $path      = $pathBuilder->build($this->context, $startedAt, $extension);
         $backup->forceFill([
             'path'           => $path,
             'retention_tier' => $classifier->classify($startedAt)->value,
@@ -94,12 +99,15 @@ class RunBackupJob implements ShouldQueue
                 ?? $this->context->disk);
 
             $metadata = new BackupMetadata(
-                backupId:  (int) $backup->id,
-                tenantId:  $this->context->tenantId,
-                bucket:    $bucket,
-                path:      $path,
-                disk:      $this->context->disk,
-                startedAt: $startedAt,
+                backupId:    (int) $backup->id,
+                tenantId:    $this->context->tenantId,
+                bucket:      $bucket,
+                path:        $path,
+                disk:        $this->context->disk,
+                startedAt:   $startedAt,
+                contentType: $encryption->name() !== 'none'
+                    ? 'application/octet-stream'
+                    : 'application/gzip',
             );
 
             $backup->markAs(BackupStatus::Uploading);

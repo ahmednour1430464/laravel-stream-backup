@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Log;
  * @property int|null         $size
  * @property string|null      $checksum
  * @property string|null      $compression_driver
+ * @property string|null      $encryption_driver
  * @property float|null       $compression_ratio
  * @property float|null       $upload_speed_mbps
  * @property \Illuminate\Support\Carbon|null $started_at

@@ -1,0 +1,66 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ahmednour\StreamBackup\Encryption;
+
+use Ahmednour\StreamBackup\Contracts\BackupStream;
+use Ahmednour\StreamBackup\Contracts\EncryptionDriver;
+use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
+use Ahmednour\StreamBackup\Streams\OpenSslEncryptionStream;
+
+/**
+ * AES-256-GCM stream encryption driver via PHP's ext-openssl.
+ *
+ * The driver itself is stateless — all per-backup mutable state (IV,
+ * chunk counter, key) lives inside OpenSslEncryptionStream so multiple
+ * concurrent backups never interfere.
+ *
+ * Wire format (handled by OpenSslEncryptionStream):
+ *   Header:  [0x01 (version byte)][12-byte random base nonce]
+ *   Chunks:  [4-byte BE ciphertext_len][16-byte GCM tag][ciphertext]
+ *   EOF:     [4 bytes: 0x00000000]
+ *
+ * Per-chunk nonce derivation:
+ *   nonce_i = base_nonce XOR pack('N', i) in the last 4 bytes.
+ *   Supports up to 2^32 chunks (~256 TB at 64 KB chunks).
+ *
+ * Requirements: ext-openssl (universally available on PHP).
+ *
+ * Generate a key:
+ *   php -r "echo base64_encode(random_bytes(32));"
+ */
+final class OpenSslAes256GcmDriver implements EncryptionDriver
+{
+    public function spawn(BackupStream $inner, string $key): BackupStream
+    {
+        if (! extension_loaded('openssl')) {
+            throw new InvalidConfigException(
+                "Encryption driver 'openssl-aes-256-gcm' requires ext-openssl, which is not loaded."
+            );
+        }
+
+        if (strlen($key) !== $this->keyLength()) {
+            throw new InvalidConfigException(sprintf(
+                'Encryption driver "%s" requires a %d-byte key; got %d bytes. ' .
+                'Generate a valid key: php -r "echo base64_encode(random_bytes(%d));"',
+                $this->name(),
+                $this->keyLength(),
+                strlen($key),
+                $this->keyLength(),
+            ));
+        }
+
+        return new OpenSslEncryptionStream($inner, $key);
+    }
+
+    public function name(): string
+    {
+        return 'openssl-aes-256-gcm';
+    }
+
+    public function keyLength(): int
+    {
+        return 32; // 256 bits
+    }
+}

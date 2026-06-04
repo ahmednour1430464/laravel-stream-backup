@@ -9,6 +9,11 @@ use Ahmednour\StreamBackup\Commands\BackupCleanupCommand;
 use Ahmednour\StreamBackup\Commands\BackupTenantCommand;
 use Ahmednour\StreamBackup\Compression\GzipDriver;
 use Ahmednour\StreamBackup\Compression\PigzDriver;
+use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
+use Ahmednour\StreamBackup\Encryption\NullEncryptionDriver;
+use Ahmednour\StreamBackup\Encryption\OpenSslAes256GcmDriver;
+use Ahmednour\StreamBackup\Encryption\SodiumDriver;
+use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
 use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\Contracts\DatabaseDumper;
 use Ahmednour\StreamBackup\Contracts\TenantResolver;
@@ -107,6 +112,15 @@ class StreamBackupServiceProvider extends ServiceProvider
         // Third-party packages call DumperFactory::extend() in their
         // ServiceProvider::boot() to register custom drivers (OCP).
         $this->app->singleton(DumperFactory::class);
+
+        // EncryptionFactory — singleton so extend() registrations persist.
+        // Third-party packages call EncryptionFactory::extend() in their
+        // ServiceProvider::boot() to register custom encryption drivers (OCP).
+        $this->app->singleton(EncryptionFactory::class);
+
+        // EncryptionKeyResolver — resolves raw binary key from env/file.
+        // Singleton is safe: it holds no key state (key is returned, not cached).
+        $this->app->singleton(EncryptionKeyResolver::class);
 
         // DatabaseDumper resolves through the factory (global default).
         // StreamPipeline uses DumperFactory directly for per-context

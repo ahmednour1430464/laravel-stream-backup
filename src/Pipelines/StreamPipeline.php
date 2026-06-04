@@ -11,9 +11,11 @@ use Ahmednour\StreamBackup\DTOs\BackupContext;
 use Ahmednour\StreamBackup\DTOs\BackupMetadata;
 use Ahmednour\StreamBackup\DTOs\UploadResult;
 use Ahmednour\StreamBackup\Dumpers\DumperFactory;
+use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Streams\ChecksumStream;
 use Ahmednour\StreamBackup\Streams\ProcessBackupStream;
+use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
 use Ahmednour\StreamBackup\Uploaders\MultipartSession;
 use Illuminate\Contracts\Config\Repository as Config;
 
@@ -47,6 +49,8 @@ final class StreamPipeline
     public function __construct(
         private readonly DumperFactory $dumperFactory,
         private readonly CompressionDriver $compression,
+        private readonly EncryptionFactory $encryptionFactory,
+        private readonly EncryptionKeyResolver $keyResolver,
         private readonly UploadDriver $uploader,
         private readonly Config $config,
     ) {
@@ -75,10 +79,14 @@ final class StreamPipeline
         [$pigzProc, $pigzStdin, $pigzStdout, $pigzStderr] = $this->spawnCompressor();
 
         // 4. Create a ProcessBackupStream wrapper for the compressor so close()
-        //    can validate its exit code, and tee it through a ChecksumStream
-        //    so the SHA-256 is computed during upload.
+        //    can validate its exit code; wrap it in an optional EncryptionStream
+        //    (no-op when driver = 'none'); then tee through a ChecksumStream so
+        //    the SHA-256 is computed over the final ciphertext during upload.
         $pigzBackupStream = new ProcessBackupStream($pigzProc, $pigzStdout, $pigzStderr, $this->compression->name());
-        $compressedStream = new ChecksumStream($pigzBackupStream);
+        $encryption       = $this->encryptionFactory->make();
+        $key              = $this->keyResolver->resolve($encryption);
+        $encryptedStream  = $encryption->spawn($pigzBackupStream, $key);
+        $compressedStream = new ChecksumStream($encryptedStream);
 
         // 5. Initiate the multipart upload (persists UploadId to the backups row).
         $session = $this->uploader->initiate($metadata);
@@ -206,6 +214,13 @@ final class StreamPipeline
             $this->killProcess($dumpProc);
             $this->killProcess($pigzProc);
             $this->closeIfOpen($partBuffer);
+            // Best-effort: close the encryption stream to wipe key material
+            // even if the pipeline failed mid-stream.
+            try {
+                $compressedStream->close();
+            } catch (\Throwable) {
+                // Suppress — we're already handling an exception.
+            }
             throw $e instanceof PipelineException ? $e : new PipelineException($e->getMessage(), 0, $e);
         } finally {
             $this->closeIfOpen($partBuffer);
