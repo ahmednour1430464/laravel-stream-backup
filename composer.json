@@ -18,7 +18,6 @@
         "illuminate/database": "^10.0 || ^11.0",
         "illuminate/queue": "^10.0 || ^11.0",
         "illuminate/console": "^10.0 || ^11.0",
-        "illuminate/cache": "^10.0 || ^11.0",
         "illuminate/bus": "^10.0 || ^11.0",
         "illuminate/contracts": "^10.0 || ^11.0",
         "aws/aws-sdk-php": "^3.380"

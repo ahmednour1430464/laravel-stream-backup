@@ -17,9 +17,7 @@ use Ahmednour\StreamBackup\Support\BackupSemaphore;
 use Ahmednour\StreamBackup\Support\BackupVerifier;
 use Ahmednour\StreamBackup\Events\BackupFailed as BackupFailedEvent;
 use Ahmednour\StreamBackup\Events\BackupStarting;
-use Ahmednour\StreamBackup\Notifications\BackupFailed as BackupFailedNotification;
-use Ahmednour\StreamBackup\Notifications\BackupSuccessful;
-use Ahmednour\StreamBackup\Support\NotificationManager;
+use Ahmednour\StreamBackup\Events\BackupSuccessful;
 use Ahmednour\StreamBackup\Support\PreflightChecker;
 use Ahmednour\StreamBackup\Support\RetentionClassifier;
 use Carbon\CarbonImmutable;
@@ -60,7 +58,6 @@ class RunBackupJob implements ShouldQueue
         EncryptionFactory $encryptionFactory,
         RetentionClassifier $classifier,
         BackupVerifier $verifier,
-        NotificationManager $notificationManager,
         PreflightChecker $preflightChecker,
         Config $config,
     ): void {
@@ -145,7 +142,7 @@ class RunBackupJob implements ShouldQueue
                 'duration'    => $finishedAt->getTimestamp() - $startedAt->getTimestamp(),
             ]);
 
-            $notificationManager->notify(new BackupSuccessful($backup));
+            BackupSuccessful::dispatch($this->context, $backup);
         } catch (\Throwable $e) {
             Log::error('stream-backup job failed', [
                 'backup_id' => $backup->id,
@@ -168,7 +165,6 @@ class RunBackupJob implements ShouldQueue
 
             if (! $aborted) {
                 BackupFailedEvent::dispatch($this->context, $e);
-                $notificationManager->notify(new BackupFailedNotification($backup, $e->getMessage()));
             }
 
             throw $e;
