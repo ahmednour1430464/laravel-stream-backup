@@ -144,11 +144,6 @@ class RunBackupJob implements ShouldQueue
 
             BackupSuccessful::dispatch($this->context, $backup);
         } catch (\Throwable $e) {
-            Log::error('stream-backup job failed', [
-                'backup_id' => $backup->id,
-                'tenant'    => $this->context->tenantId,
-                'message'   => $e->getMessage(),
-            ]);
 
             try {
                 $backup->markAs($aborted ? BackupStatus::Aborted : BackupStatus::Failed, [

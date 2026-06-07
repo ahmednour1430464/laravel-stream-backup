@@ -30,6 +30,7 @@ final class BackupStatusTransitionTest extends TestCase
     public function test_dumping_can_move_forward(): void
     {
         self::assertTrue(BackupStatus::Dumping->canTransitionTo(BackupStatus::Compressing));
+        self::assertTrue(BackupStatus::Dumping->canTransitionTo(BackupStatus::Encrypting));
         self::assertTrue(BackupStatus::Dumping->canTransitionTo(BackupStatus::Uploading));
         self::assertTrue(BackupStatus::Dumping->canTransitionTo(BackupStatus::Failed));
     }
@@ -64,6 +65,7 @@ final class BackupStatusTransitionTest extends TestCase
         self::assertFalse(BackupStatus::Pending->isTerminal());
         self::assertFalse(BackupStatus::Dumping->isTerminal());
         self::assertFalse(BackupStatus::Compressing->isTerminal());
+        self::assertFalse(BackupStatus::Encrypting->isTerminal());
         self::assertFalse(BackupStatus::Uploading->isTerminal());
         self::assertFalse(BackupStatus::Verifying->isTerminal());
     }

@@ -8,7 +8,6 @@ use Ahmednour\StreamBackup\Enums\BackupStatus;
 use Ahmednour\StreamBackup\Enums\RetentionTier;
 use Ahmednour\StreamBackup\Exceptions\InvalidStatusTransitionException;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Eloquent model for the `backups` table.
@@ -58,19 +57,7 @@ class Backup extends Model
     {
         $current = $this->status instanceof BackupStatus ? $this->status : BackupStatus::Pending;
 
-        $logContext = [
-            'backup_id'     => $this->id,
-            'tenant_id'     => $this->tenant_id,
-            'database_name' => $this->database_name,
-            'from'          => $current->value,
-            'to'            => $next->value,
-            'extra_keys'    => array_keys($extra),
-        ];
-
-        Log::info('Backup status transition attempt', $logContext);
-
         if (! $current->canTransitionTo($next)) {
-            Log::error('Backup status transition rejected', $logContext);
 
             throw new InvalidStatusTransitionException(sprintf(
                 'Invalid backup status transition: %s -> %s',
@@ -81,9 +68,6 @@ class Backup extends Model
 
         $this->forceFill(array_merge(['status' => $next], $extra))->save();
 
-        Log::info('Backup status transition committed', $logContext + [
-            'terminal' => $next->isTerminal(),
-        ]);
     }
 
     public function scopeSuccessful($query)

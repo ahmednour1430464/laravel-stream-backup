@@ -65,10 +65,7 @@ class AbortStaleMultipartUploads implements ShouldQueue
                 'error_message' => 'Aborted by stale multipart cleanup.',
             ])->save();
         } catch (\Throwable $e) {
-            Log::warning('stream-backup stale multipart abort failed', [
-                'backup_id' => $backup->id,
-                'message'   => $e->getMessage(),
-            ]);
+           
         }
     }
 }
