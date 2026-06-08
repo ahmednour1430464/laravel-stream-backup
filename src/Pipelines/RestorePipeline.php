@@ -165,6 +165,7 @@ final class RestorePipeline
         $sourceDone      = false;
         $stdinClosed     = false;
         $stdoutDone      = false;
+        $stderrDone      = false;
         $stderrBuffer    = '';
 
         while (true) {
@@ -191,7 +192,7 @@ final class RestorePipeline
             }
 
             // Also drain stderr.
-            if (is_resource($decompStderr)) {
+            if (! $stderrDone && is_resource($decompStderr)) {
                 $read[] = $decompStderr;
             }
 
@@ -237,9 +238,11 @@ final class RestorePipeline
             }
 
             // Drain stderr.
-            if (is_resource($decompStderr) && in_array($decompStderr, $read, true)) {
+            if (! $stderrDone && is_resource($decompStderr) && in_array($decompStderr, $read, true)) {
                 $errData = @fread($decompStderr, 8192);
-                if ($errData !== false && $errData !== '') {
+                if ($errData === false || ($errData === '' && feof($decompStderr))) {
+                    $stderrDone = true;
+                } elseif ($errData !== '') {
                     $stderrBuffer .= $errData;
                 }
             }
