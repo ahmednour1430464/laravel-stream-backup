@@ -53,21 +53,27 @@ class RunRestoreJob implements ShouldQueue
 
     public function handle(RestorePipeline $pipeline): void
     {
+        Log::debug("[Restore] Job started for backup ID {$this->context->backupId}. Context: ", ['context' => (array) $this->context]);
         $this->setupSignalHandlers();
 
         $lockName = 'stream-backup-slot';
         $lock = Cache::lock($lockName, 86400); // 24-hour max
 
+        Log::debug("[Restore] Attempting to acquire lock: {$lockName}");
         if (! $lock->get()) {
+            Log::debug("[Restore] Could not acquire lock, releasing job back to queue (delay 60s).");
             $this->release(60);
             return;
         }
+        Log::debug("[Restore] Lock acquired: {$lockName}");
 
         try {
             if ($this->receivedSigterm) {
+                Log::debug("[Restore] Job aborted due to SIGTERM before processing.");
                 return;
             }
 
+            Log::debug("[Restore] Fetching backup ID {$this->context->backupId}.");
             $backup = Backup::find($this->context->backupId);
 
             if ($backup === null) {
@@ -77,6 +83,7 @@ class RunRestoreJob implements ShouldQueue
             if ($backup->status !== BackupStatus::Completed) {
                 throw new \InvalidArgumentException("Backup ID {$this->context->backupId} is not completed (status: {$backup->status->value}).");
             }
+            Log::debug("[Restore] Backup found and is completed.");
 
             $this->restoreRecord = Restore::create([
                 'backup_id'        => $backup->id,
@@ -88,11 +95,15 @@ class RunRestoreJob implements ShouldQueue
                 'started_at'       => now(),
             ]);
 
+            Log::debug("[Restore] Created restore record ID {$this->restoreRecord->id}.");
+
             event(new RestoreStarting($this->context, $this->restoreRecord));
 
             Log::info("[Restore] Starting restore for backup {$backup->id} into connection {$this->context->connectionName}.");
 
+            Log::debug("[Restore] Running RestorePipeline...");
             $result = $pipeline->run($this->context, $backup);
+            Log::debug("[Restore] RestorePipeline completed.", ['result' => (array) $result]);
 
             $this->restoreRecord->markAs(RestoreStatus::Completed, [
                 'tables_restored' => $result->tablesRestored,
@@ -107,6 +118,7 @@ class RunRestoreJob implements ShouldQueue
             $this->handleFailure($e);
             throw $e;
         } finally {
+            Log::debug("[Restore] Releasing lock: {$lockName}");
             $lock->release();
         }
     }
