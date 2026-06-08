@@ -7,6 +7,7 @@ namespace Ahmednour\StreamBackup;
 use Ahmednour\StreamBackup\Commands\BackupAllCommand;
 use Ahmednour\StreamBackup\Commands\BackupCleanupCommand;
 use Ahmednour\StreamBackup\Commands\BackupTenantCommand;
+use Ahmednour\StreamBackup\Commands\RestoreBackupCommand;
 use Ahmednour\StreamBackup\Compression\GzipDriver;
 use Ahmednour\StreamBackup\Compression\PigzDriver;
 use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
@@ -163,6 +164,7 @@ class StreamBackupServiceProvider extends ServiceProvider
                 BackupTenantCommand::class,
                 BackupAllCommand::class,
                 BackupCleanupCommand::class,
+                RestoreBackupCommand::class,
             ]);
         }
 
