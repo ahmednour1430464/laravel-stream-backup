@@ -9,6 +9,7 @@ use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\DTOs\RestoreContext;
 use Ahmednour\StreamBackup\DTOs\RestoreResult;
 use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
+use Ahmednour\StreamBackup\Enums\RestoreStatus;
 use Ahmednour\StreamBackup\Exceptions\BackupFileNotFoundException;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Models\Backup;
@@ -55,7 +56,7 @@ final class RestorePipeline
     ) {
     }
 
-    public function run(RestoreContext $context, Backup $backup): RestoreResult
+    public function run(RestoreContext $context, Backup $backup, ?callable $onProgress = null): RestoreResult
     {
         Log::debug("[RestorePipeline] run() invoked for backup {$backup->id}.");
         $startTime = microtime(true);
@@ -69,6 +70,9 @@ final class RestorePipeline
         Log::debug("[RestorePipeline] File exists on S3: {$backup->path}");
 
         // 2. Download the backup as a stream.
+        if ($onProgress) {
+            $onProgress(RestoreStatus::Downloading);
+        }
         Log::debug("[RestorePipeline] Requesting S3 GetObject stream...");
         $response     = $this->s3->getObject([
             'Bucket' => $bucket,
@@ -80,10 +84,17 @@ final class RestorePipeline
         Log::debug("[RestorePipeline] S3DownloadStream initialized.");
 
         // 3. Decrypt if the backup was encrypted.
+        $isEncrypted = $backup->encryption_driver !== null && $backup->encryption_driver !== '' && $backup->encryption_driver !== 'none';
+        if ($isEncrypted && $onProgress) {
+            $onProgress(RestoreStatus::Decrypting);
+        }
         $decryptedStream = $this->applyDecryption($downloadStream, $backup);
         Log::debug("[RestorePipeline] Decryption stream initialized (Driver: " . ($backup->encryption_driver ?: 'none') . ").");
 
         // 4. Spawn decompressor (pigz -d -c) and pipe the stream through it.
+        if ($onProgress) {
+            $onProgress(RestoreStatus::Decompressing);
+        }
         Log::debug("[RestorePipeline] Spawning decompressor process...");
         [$decompProc, $decompStdin, $decompStdout, $decompStderr] = $this->spawnDecompressor();
         Log::debug("[RestorePipeline] Decompressor process spawned successfully.");
@@ -106,6 +117,9 @@ final class RestorePipeline
             Log::debug("[RestorePipeline] Decompression finished. Temp stream size: " . ($streamStats['size'] ?? 'unknown') . " bytes.");
 
             // 6. Parse the decompressed SQL to extract requested table blocks.
+            if ($onProgress) {
+                $onProgress(RestoreStatus::Parsing);
+            }
             Log::debug("[RestorePipeline] Parsing SQL stream for requested tables...");
             $tableBlocks = $this->parser->parse($sqlStream, $context->tables);
             Log::debug("[RestorePipeline] Parsing completed. Found " . count($tableBlocks) . " table blocks.");
@@ -116,6 +130,9 @@ final class RestorePipeline
             }
 
             // 7. Restore the tables inside a transaction.
+            if ($onProgress) {
+                $onProgress(RestoreStatus::Importing);
+            }
             Log::debug("[RestorePipeline] Handing over to TableRestorer...");
             $result = $this->restorer->restore($tableBlocks, $context->connectionName, $startTime);
             Log::debug("[RestorePipeline] TableRestorer completed.");

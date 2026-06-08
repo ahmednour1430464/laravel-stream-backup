@@ -102,7 +102,9 @@ class RunRestoreJob implements ShouldQueue
             Log::info("[Restore] Starting restore for backup {$backup->id} into connection {$this->context->connectionName}.");
 
             Log::debug("[Restore] Running RestorePipeline...");
-            $result = $pipeline->run($this->context, $backup);
+            $result = $pipeline->run($this->context, $backup, function (RestoreStatus $status) {
+                $this->restoreRecord->markAs($status);
+            });
             Log::debug("[Restore] RestorePipeline completed.", ['result' => (array) $result]);
 
             $this->restoreRecord->markAs(RestoreStatus::Completed, [
