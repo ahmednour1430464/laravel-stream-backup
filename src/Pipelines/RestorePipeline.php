@@ -168,14 +168,19 @@ final class RestorePipeline
         $stderrBuffer    = '';
 
         while (true) {
+            // Read from the BackupStream (non-blocking) when we have no pending data.
+            if (! $sourceDone && $pendingChunk === '') {
+                $chunk = $source->read($readChunk);
+                if ($chunk === null) {
+                    $sourceDone = true;
+                } elseif ($chunk !== '') {
+                    $pendingChunk .= $chunk;
+                }
+            }
+
             $read   = [];
             $write  = [];
             $except = null;
-
-            if (! $sourceDone && $pendingChunk === '') {
-                // We need data from source — but source is a BackupStream,
-                // not a raw resource for stream_select. Read from it directly.
-            }
 
             if (! $stdoutDone) {
                 $read[] = $decompStdout;
@@ -192,16 +197,6 @@ final class RestorePipeline
 
             if ($read === [] && $write === []) {
                 break;
-            }
-
-            // Read from the BackupStream (non-blocking) when we have no pending data.
-            if (! $sourceDone && $pendingChunk === '') {
-                $chunk = $source->read($readChunk);
-                if ($chunk === null) {
-                    $sourceDone = true;
-                } elseif ($chunk !== '') {
-                    $pendingChunk .= $chunk;
-                }
             }
 
             $changed = @stream_select($read, $write, $except, 0, 200_000);
