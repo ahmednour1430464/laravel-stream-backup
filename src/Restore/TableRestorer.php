@@ -58,8 +58,19 @@ final class TableRestorer
                 Log::info("[Restore] Table `{$tableName}` restored ({$rowsForTable} rows affected).");
             }
 
-            $db->commit();
-            Log::info('[Restore] Transaction committed successfully.');
+            $isImplicitlyCommitted = method_exists($db, 'getPdo')
+                && $db->getPdo() !== null
+                && method_exists($db->getPdo(), 'inTransaction')
+                && $db->transactionLevel() > 0
+                && ! $db->getPdo()->inTransaction();
+
+            if ($isImplicitlyCommitted) {
+                Log::info('[Restore] Implicit commit detected (likely DDL). Resetting transaction state.');
+                $db->rollBack();
+            } else {
+                $db->commit();
+                Log::info('[Restore] Transaction committed successfully.');
+            }
         } catch (\Throwable $e) {
             try {
                 $db->rollBack();
