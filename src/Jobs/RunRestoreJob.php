@@ -30,9 +30,14 @@ class RunRestoreJob implements ShouldQueue
     use SerializesModels;
 
     /**
-     * Do not retry restores. They are destructive and non-idempotent.
+     * Unlimited attempts so we can wait for the lock.
      */
-    public int $tries = 1;
+    public int $tries = 0;
+
+    /**
+     * Fail on the first exception, because restores are destructive and non-idempotent.
+     */
+    public int $maxExceptions = 1;
 
     /**
      * Unlimited timeout so long restores aren't killed by the queue worker.
