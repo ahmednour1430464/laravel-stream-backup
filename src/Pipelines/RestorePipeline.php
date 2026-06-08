@@ -73,6 +73,7 @@ final class RestorePipeline
         $response     = $this->s3->getObject([
             'Bucket' => $bucket,
             'Key'    => $backup->path,
+            '@http'  => ['stream' => true],
         ]);
         $bodyResource = $this->extractStreamResource($response['Body']);
         $downloadStream = new S3DownloadStream($bodyResource);

@@ -32,7 +32,7 @@ final class S3DownloadStream implements BackupStream
         }
 
         $this->stream = $stream;
-        stream_set_blocking($this->stream, false);
+        
     }
 
     public function read(int $length = 65536): ?string
