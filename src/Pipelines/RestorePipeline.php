@@ -18,6 +18,7 @@ use Ahmednour\StreamBackup\Streams\S3DownloadStream;
 use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
 use Aws\S3\S3ClientInterface;
 use Illuminate\Contracts\Config\Repository as Config;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Streaming restore pipeline — the inverse of StreamPipeline.
@@ -56,32 +57,42 @@ final class RestorePipeline
 
     public function run(RestoreContext $context, Backup $backup): RestoreResult
     {
+        Log::debug("[RestorePipeline] run() invoked for backup {$backup->id}.");
         $startTime = microtime(true);
         $readChunk = (int) $this->config->get('stream-backup.read_chunk', 64 * 1024);
         $bucket    = $this->resolveBucket($backup);
 
+        Log::debug("[RestorePipeline] Bucket resolved: {$bucket}");
+
         // 1. Verify the backup file exists on S3.
         $this->assertFileExists($bucket, $backup->path);
+        Log::debug("[RestorePipeline] File exists on S3: {$backup->path}");
 
         // 2. Download the backup as a stream.
+        Log::debug("[RestorePipeline] Requesting S3 GetObject stream...");
         $response     = $this->s3->getObject([
             'Bucket' => $bucket,
             'Key'    => $backup->path,
         ]);
         $bodyResource = $this->extractStreamResource($response['Body']);
         $downloadStream = new S3DownloadStream($bodyResource);
+        Log::debug("[RestorePipeline] S3DownloadStream initialized.");
 
         // 3. Decrypt if the backup was encrypted.
         $decryptedStream = $this->applyDecryption($downloadStream, $backup);
+        Log::debug("[RestorePipeline] Decryption stream initialized (Driver: " . ($backup->encryption_driver ?: 'none') . ").");
 
         // 4. Spawn decompressor (pigz -d -c) and pipe the stream through it.
+        Log::debug("[RestorePipeline] Spawning decompressor process...");
         [$decompProc, $decompStdin, $decompStdout, $decompStderr] = $this->spawnDecompressor();
+        Log::debug("[RestorePipeline] Decompressor process spawned successfully.");
 
         try {
             // 5. Pipe the decrypted stream into the decompressor's stdin,
             //    while simultaneously reading decompressed SQL from stdout.
             //    Collect the full decompressed output into a temp stream
             //    that the SqlDumpParser can read line-by-line.
+            Log::debug("[RestorePipeline] Piping stream to decompressor...");
             $sqlStream = $this->pipeToDecompressor(
                 $decryptedStream,
                 $decompProc,
@@ -90,9 +101,13 @@ final class RestorePipeline
                 $decompStderr,
                 $readChunk,
             );
+            $streamStats = fstat($sqlStream);
+            Log::debug("[RestorePipeline] Decompression finished. Temp stream size: " . ($streamStats['size'] ?? 'unknown') . " bytes.");
 
             // 6. Parse the decompressed SQL to extract requested table blocks.
+            Log::debug("[RestorePipeline] Parsing SQL stream for requested tables...");
             $tableBlocks = $this->parser->parse($sqlStream, $context->tables);
+            Log::debug("[RestorePipeline] Parsing completed. Found " . count($tableBlocks) . " table blocks.");
 
             // Close the sql stream now that parsing is complete.
             if (is_resource($sqlStream)) {
@@ -100,8 +115,12 @@ final class RestorePipeline
             }
 
             // 7. Restore the tables inside a transaction.
-            return $this->restorer->restore($tableBlocks, $context->connectionName, $startTime);
+            Log::debug("[RestorePipeline] Handing over to TableRestorer...");
+            $result = $this->restorer->restore($tableBlocks, $context->connectionName, $startTime);
+            Log::debug("[RestorePipeline] TableRestorer completed.");
+            return $result;
         } catch (\Throwable $e) {
+            Log::error("[RestorePipeline] Exception caught: {$e->getMessage()}", ['exception' => $e]);
             $this->killProcess($decompProc);
             throw $e instanceof PipelineException ? $e : new PipelineException($e->getMessage(), 0, $e);
         }
@@ -138,6 +157,7 @@ final class RestorePipeline
         mixed $decompStderr,
         int $readChunk,
     ): mixed {
+        Log::debug("[RestorePipeline] Entering pipeToDecompressor loop.");
         $output = fopen('php://temp', 'r+b');
 
         $pendingChunk    = '';
@@ -230,6 +250,7 @@ final class RestorePipeline
         }
 
         // Close remaining pipes and validate exit code.
+        Log::debug("[RestorePipeline] Exited pipeToDecompressor loop. Validating exit code...");
         if (is_resource($decompStdout)) {
             @fclose($decompStdout);
         }
@@ -238,6 +259,7 @@ final class RestorePipeline
         }
 
         $this->validateDecompressorExit($decompProc, $stderrBuffer);
+        Log::debug("[RestorePipeline] Decompressor exit code validated successfully.");
 
         // Close the source stream (which may also close the decryption layer).
         $source->close();
