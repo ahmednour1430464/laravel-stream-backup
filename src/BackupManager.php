@@ -73,10 +73,25 @@ class BackupManager
     {
         $backup = \Ahmednour\StreamBackup\Models\Backup::findOrFail($backupId);
 
+        $connectionName = $connection ?? $backup->connection_name;
+
+        if ($connectionName === null) {
+            if ($backup->tenant_id !== null) {
+                $tenants = (array) $this->config->get('stream-backup.tenants', []);
+                foreach ($tenants as $t) {
+                    if (($t['tenant_id'] ?? null) === $backup->tenant_id) {
+                        $connectionName = $t['connection'] ?? null;
+                        break;
+                    }
+                }
+            }
+            $connectionName ??= $this->config->get('database.default', 'mysql');
+        }
+
         $context = new \Ahmednour\StreamBackup\DTOs\RestoreContext(
             backupId:       $backupId,
             tables:         $tables,
-            connectionName: $connection ?? $backup->connection_name,
+            connectionName: (string) $connectionName,
             databaseName:   $backup->database_name,
             disk:           (string) $this->config->get('stream-backup.upload.disk', 's3'),
             tenantId:       $backup->tenant_id,

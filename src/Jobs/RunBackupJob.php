@@ -83,6 +83,7 @@ class RunBackupJob implements ShouldQueue
         $backup = Backup::create([
             'tenant_id'          => $this->context->tenantId,
             'database_name'      => $this->context->databaseName,
+            'connection_name'    => $this->context->connectionName,
             'disk'               => $this->context->disk,
             'status'             => BackupStatus::Pending->value,
             'compression_driver' => $compression->name(),

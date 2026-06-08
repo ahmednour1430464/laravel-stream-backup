@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int|null         $id
  * @property string|null      $tenant_id
  * @property string           $database_name
+ * @property string|null      $connection_name
  * @property string           $disk
  * @property string|null      $path
  * @property BackupStatus     $status
