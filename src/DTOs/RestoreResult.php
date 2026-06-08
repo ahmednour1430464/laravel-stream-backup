@@ -1,0 +1,23 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ahmednour\StreamBackup\DTOs;
+
+/**
+ * Value object returned by the restore pipeline on success.
+ */
+final class RestoreResult
+{
+    /**
+     * @param string[] $tablesRestored  List of table names that were restored
+     * @param int      $totalRowsAffected  Total rows inserted across all tables
+     * @param float    $durationSeconds    Wall-clock duration of the restore
+     */
+    public function __construct(
+        public readonly array $tablesRestored,
+        public readonly int $totalRowsAffected,
+        public readonly float $durationSeconds,
+    ) {
+    }
+}

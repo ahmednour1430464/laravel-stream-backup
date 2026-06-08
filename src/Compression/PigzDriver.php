@@ -23,6 +23,11 @@ final class PigzDriver implements CompressionDriver
         return [$binary, "-{$level}", '-c'];
     }
 
+    public function buildDecompressCommand(): array
+    {
+        return [$this->locator->locate('pigz'), '-d', '-c'];
+    }
+
     public function name(): string
     {
         return 'pigz';

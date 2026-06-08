@@ -26,6 +26,11 @@ final class NullEncryptionDriver implements EncryptionDriver, VerifiesMagicBytes
         return $inner;
     }
 
+    public function spawnDecrypt(BackupStream $inner, string $key): BackupStream
+    {
+        return $inner;
+    }
+
     public function name(): string
     {
         return 'none';

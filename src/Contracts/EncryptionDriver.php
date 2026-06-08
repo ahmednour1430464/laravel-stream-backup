@@ -53,4 +53,22 @@ interface EncryptionDriver
      * Return 0 for drivers that require no key (NullEncryptionDriver).
      */
     public function keyLength(): int;
+
+    /**
+     * Wrap $inner (a ciphertext BackupStream) in a decrypting decorator.
+     *
+     * This is the inverse of spawn(): the returned stream reads encrypted
+     * chunks from $inner, decrypts them, and yields plaintext.
+     *
+     * Implementations MUST:
+     *  - Return $inner unchanged when no decryption is needed (NullEncryptionDriver).
+     *  - Validate the wire format header (version byte, nonce/header) on first read.
+     *  - Decrypt chunk-by-chunk with O(chunk_size) memory — no full-stream buffering.
+     *  - Wipe key material from memory on close().
+     *
+     * @param  BackupStream  $inner  Upstream ciphertext stream (e.g. S3 download body)
+     * @param  string        $key    Raw binary key; length MUST equal keyLength()
+     * @return BackupStream          The decrypted plaintext stream
+     */
+    public function spawnDecrypt(BackupStream $inner, string $key): BackupStream;
 }

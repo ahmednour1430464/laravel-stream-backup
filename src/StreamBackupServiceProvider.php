@@ -22,8 +22,12 @@ use Ahmednour\StreamBackup\Dumpers\DumperFactory;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
 use Ahmednour\StreamBackup\Jobs\AbortStaleMultipartUploads;
 use Ahmednour\StreamBackup\Jobs\BackupCleanupJob;
+use Ahmednour\StreamBackup\Pipelines\RestorePipeline;
+use Ahmednour\StreamBackup\Pipelines\StreamPipeline;
 use Ahmednour\StreamBackup\Resolvers\ConfigTenantResolver;
 use Ahmednour\StreamBackup\Resolvers\SingleDatabaseResolver;
+use Ahmednour\StreamBackup\Restore\SqlDumpParser;
+use Ahmednour\StreamBackup\Restore\TableRestorer;
 use Ahmednour\StreamBackup\Support\BackupPathBuilder;
 use Ahmednour\StreamBackup\Support\BackupSemaphore;
 use Ahmednour\StreamBackup\Support\BackupVerifier;
@@ -45,12 +49,7 @@ class StreamBackupServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/stream-backup.php', 'stream-backup');
 
-        // Core singletons
-        $this->app->singleton(MySQLCredentialFile::class);
-
         $this->app->singleton(BinaryLocator::class, function ($app) {
-            $config  = $app->make(Config::class);
-            $drivers = (array) $config->get('stream-backup.dump.drivers', []);
 
             return new BinaryLocator([
                 'mysqldump' => (string) ($drivers['mysql']['binary']  ?? 'mysqldump'),

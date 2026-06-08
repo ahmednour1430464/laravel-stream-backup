@@ -163,6 +163,7 @@ final class BackupVerifierTest extends TestCase
         $factory->extend('custom-driver', function () {
             return new class implements EncryptionDriver {
                 public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
+                public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
                 public function name(): string { return 'custom-driver'; }
                 public function keyLength(): int { return 0; }
             };
@@ -189,6 +190,7 @@ final class BackupVerifierTest extends TestCase
         $factory->extend('custom-verifiable-driver', function () {
             return new class implements EncryptionDriver, VerifiesMagicBytes {
                 public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
+                public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
                 public function name(): string { return 'custom-verifiable-driver'; }
                 public function keyLength(): int { return 0; }
                 public function magicBytesLength(): int { return 3; }

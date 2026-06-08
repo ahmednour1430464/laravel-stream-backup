@@ -9,6 +9,7 @@ use Ahmednour\StreamBackup\Contracts\EncryptionDriver;
 use Ahmednour\StreamBackup\Contracts\VerifiesMagicBytes;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
 use Ahmednour\StreamBackup\Models\Backup;
+use Ahmednour\StreamBackup\Streams\OpenSslDecryptionStream;
 use Ahmednour\StreamBackup\Streams\OpenSslEncryptionStream;
 
 /**
@@ -36,24 +37,18 @@ final class OpenSslAes256GcmDriver implements EncryptionDriver, VerifiesMagicByt
 {
     public function spawn(BackupStream $inner, string $key): BackupStream
     {
-        if (! extension_loaded('openssl')) {
-            throw new InvalidConfigException(
-                "Encryption driver 'openssl-aes-256-gcm' requires ext-openssl, which is not loaded."
-            );
-        }
-
-        if (strlen($key) !== $this->keyLength()) {
-            throw new InvalidConfigException(sprintf(
-                'Encryption driver "%s" requires a %d-byte key; got %d bytes. ' .
-                'Generate a valid key: php -r "echo base64_encode(random_bytes(%d));"',
-                $this->name(),
-                $this->keyLength(),
-                strlen($key),
-                $this->keyLength(),
-            ));
-        }
+        $this->assertOpenSsl();
+        $this->assertKeyLength($key);
 
         return new OpenSslEncryptionStream($inner, $key);
+    }
+
+    public function spawnDecrypt(BackupStream $inner, string $key): BackupStream
+    {
+        $this->assertOpenSsl();
+        $this->assertKeyLength($key);
+
+        return new OpenSslDecryptionStream($inner, $key);
     }
 
     public function name(): string
@@ -77,6 +72,29 @@ final class OpenSslAes256GcmDriver implements EncryptionDriver, VerifiesMagicByt
             throw new \RuntimeException(sprintf(
                 'Backup %s is encrypted with openssl-aes-256-gcm but does not start with the expected version byte; the object is likely corrupt.',
                 $backup->path,
+            ));
+        }
+    }
+
+    private function assertOpenSsl(): void
+    {
+        if (! extension_loaded('openssl')) {
+            throw new InvalidConfigException(
+                "Encryption driver 'openssl-aes-256-gcm' requires ext-openssl, which is not loaded."
+            );
+        }
+    }
+
+    private function assertKeyLength(string $key): void
+    {
+        if (strlen($key) !== $this->keyLength()) {
+            throw new InvalidConfigException(sprintf(
+                'Encryption driver "%s" requires a %d-byte key; got %d bytes. ' .
+                'Generate a valid key: php -r "echo base64_encode(random_bytes(%d));"',
+                $this->name(),
+                $this->keyLength(),
+                strlen($key),
+                $this->keyLength(),
             ));
         }
     }

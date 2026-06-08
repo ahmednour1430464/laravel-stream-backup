@@ -71,6 +71,7 @@ final class EncryptionFactoryTest extends TestCase
 
         $customDriver = new class implements EncryptionDriver {
             public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
+            public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
             public function name(): string { return 'custom'; }
             public function keyLength(): int { return 0; }
         };
@@ -87,6 +88,7 @@ final class EncryptionFactoryTest extends TestCase
 
         $override = new class implements EncryptionDriver {
             public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
+            public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
             public function name(): string { return 'none'; }
             public function keyLength(): int { return 0; }
         };

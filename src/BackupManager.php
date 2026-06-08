@@ -61,4 +61,29 @@ class BackupManager
             ->onConnection($this->config->get('stream-backup.queue.connection', 'redis'))
             ->onQueue($this->config->get('stream-backup.queue.queue', 'backups'));
     }
+
+    /**
+     * Dispatch a restore job.
+     *
+     * @param int             $backupId   The ID of the Backup model to restore
+     * @param string[]        $tables     Specific tables to restore (empty = all)
+     * @param string|null     $connection Target database connection (overrides backup's original connection if set)
+     */
+    public function restore(int $backupId, array $tables = [], ?string $connection = null): void
+    {
+        $backup = \Ahmednour\StreamBackup\Models\Backup::findOrFail($backupId);
+
+        $context = new \Ahmednour\StreamBackup\DTOs\RestoreContext(
+            backupId:       $backupId,
+            tables:         $tables,
+            connectionName: $connection ?? $backup->connection_name,
+            databaseName:   $backup->database_name,
+            disk:           (string) $this->config->get('stream-backup.upload.disk', 's3'),
+            tenantId:       $backup->tenant_id,
+        );
+
+        \Ahmednour\StreamBackup\Jobs\RunRestoreJob::dispatch($context)
+            ->onConnection($this->config->get('stream-backup.queue.connection', 'redis'))
+            ->onQueue($this->config->get('stream-backup.queue.queue', 'backups'));
+    }
 }

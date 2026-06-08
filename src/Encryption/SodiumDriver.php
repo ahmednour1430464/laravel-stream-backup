@@ -9,6 +9,7 @@ use Ahmednour\StreamBackup\Contracts\EncryptionDriver;
 use Ahmednour\StreamBackup\Contracts\VerifiesMagicBytes;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
 use Ahmednour\StreamBackup\Models\Backup;
+use Ahmednour\StreamBackup\Streams\SodiumDecryptionStream;
 use Ahmednour\StreamBackup\Streams\SodiumEncryptionStream;
 
 /**
@@ -35,24 +36,18 @@ final class SodiumDriver implements EncryptionDriver, VerifiesMagicBytes
 {
     public function spawn(BackupStream $inner, string $key): BackupStream
     {
-        if (! extension_loaded('sodium')) {
-            throw new InvalidConfigException(
-                "Encryption driver 'sodium' requires ext-sodium, which is not loaded."
-            );
-        }
-
-        if (strlen($key) !== $this->keyLength()) {
-            throw new InvalidConfigException(sprintf(
-                'Encryption driver "%s" requires a %d-byte key; got %d bytes. ' .
-                'Generate a valid key: php -r "echo base64_encode(random_bytes(%d));"',
-                $this->name(),
-                $this->keyLength(),
-                strlen($key),
-                $this->keyLength(),
-            ));
-        }
+        $this->assertSodium();
+        $this->assertKeyLength($key);
 
         return new SodiumEncryptionStream($inner, $key);
+    }
+
+    public function spawnDecrypt(BackupStream $inner, string $key): BackupStream
+    {
+        $this->assertSodium();
+        $this->assertKeyLength($key);
+
+        return new SodiumDecryptionStream($inner, $key);
     }
 
     public function name(): string
@@ -76,6 +71,29 @@ final class SodiumDriver implements EncryptionDriver, VerifiesMagicBytes
             throw new \RuntimeException(sprintf(
                 'Backup %s is encrypted with sodium but does not start with the expected version byte; the object is likely corrupt.',
                 $backup->path,
+            ));
+        }
+    }
+
+    private function assertSodium(): void
+    {
+        if (! extension_loaded('sodium')) {
+            throw new InvalidConfigException(
+                "Encryption driver 'sodium' requires ext-sodium, which is not loaded."
+            );
+        }
+    }
+
+    private function assertKeyLength(string $key): void
+    {
+        if (strlen($key) !== $this->keyLength()) {
+            throw new InvalidConfigException(sprintf(
+                'Encryption driver "%s" requires a %d-byte key; got %d bytes. ' .
+                'Generate a valid key: php -r "echo base64_encode(random_bytes(%d));"',
+                $this->name(),
+                $this->keyLength(),
+                strlen($key),
+                $this->keyLength(),
             ));
         }
     }

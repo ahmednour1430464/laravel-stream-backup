@@ -23,6 +23,11 @@ final class GzipDriver implements CompressionDriver
         return [$binary, "-{$level}", '-c'];
     }
 
+    public function buildDecompressCommand(): array
+    {
+        return [$this->locator->locate('gzip'), '-d', '-c'];
+    }
+
     public function name(): string
     {
         return 'gzip';
