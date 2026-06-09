@@ -3,7 +3,20 @@
     "description": "Streaming database backup for Laravel: dump → compress → S3 multipart upload with constant memory use. Supports MySQL, PostgreSQL, SQLite, and custom drivers.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "backup", "streaming", "s3", "digitalocean-spaces", "mysql", "postgresql", "sqlite", "pg_dump", "mysqldump", "pigz", "multi-driver"],
+    "keywords": [
+        "laravel",
+        "backup",
+        "streaming",
+        "s3",
+        "digitalocean-spaces",
+        "mysql",
+        "postgresql",
+        "sqlite",
+        "pg_dump",
+        "mysqldump",
+        "pigz",
+        "multi-driver"
+    ],
     "authors": [
         {
             "name": "ahmednour",
@@ -44,16 +57,7 @@
         }
     },
     "config": {
-        "sort-packages": true,
-        "policy": {
-            "advisories": {
-                "ignore-id": [
-                    "PKSA-mdq4-51ck-6kdq",
-                    "PKSA-8qx3-n5y5-vvnd",
-                    "PKSA-w7xr-vk7n-rstm"
-                ]
-            }
-        }
+        "sort-packages": true
     },
     "minimum-stability": "stable",
     "prefer-stable": true
