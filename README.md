@@ -2,7 +2,7 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://packagist.org/packages/ahmednour1430464/laravel-stream-backup)
 [![Total Downloads](https://img.shields.io/packagist/dt/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://packagist.org/packages/ahmednour1430464/laravel-stream-backup)
-[![License](https://img.shields.io/packagist/l/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://packagist.org/packages/ahmednour1430464/laravel-stream-backup)
+[![License](https://img.shields.io/packagist/l/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://github.com/ahmednour1430464/laravel-stream-backup/blob/main/LICENSE.md)
 [![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/ahmednour1430464/laravel-stream-backup/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/ahmednour1430464/laravel-stream-backup/actions?query=workflow%3Atests+branch%3Amain)
 
 > Streaming database → compress → S3 multipart backups **AND** S3 streaming download → decompress → transaction restores for Laravel 10+, with **constant memory use** regardless of database size.
