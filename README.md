@@ -17,6 +17,20 @@ This package is the productised form of the proof-of-concept script [`backup.php
 
 ---
 
+## Comparison with `spatie/laravel-backup`
+
+While `spatie/laravel-backup` is an excellent and widely used package, it has a fundamental limitation when dealing with large databases: **it requires significant local disk space**.
+
+| Feature | `spatie/laravel-backup` | `laravel-stream-backup` |
+| --- | --- | --- |
+| **Backup Process** | Dumps to local disk → Zips on disk → Uploads to S3 | Streams dump to compressor → Streams directly to S3 |
+| **Local Disk Required** | Yes (>100% of DB size) | **No (Zero bytes)** |
+| **Memory Usage** | Variable | **Constant (~32 MB buffer)** |
+| **Restore Process** | ❌ No built-in restore | Streams from S3 → Decompresses to temp file → Imports |
+| **Best For** | Small to medium databases | Large databases & multi-tenant setups |
+
+---
+
 ## Requirements
 
 - PHP `^8.1` with the `pcntl` and `hash` extensions (PHP `^8.2` required when running on Laravel 11)
@@ -32,10 +46,10 @@ This package is the productised form of the proof-of-concept script [`backup.php
 
 | Package | PHP | Laravel | Testbench | PHPUnit |
 |---|---|---|---|---|
-| `ahmednour1430464/laravel-stream-backup` | `8.1 / 8.2 / 8.3` | `10.*` | `8.*` | `10.*` |
+| `ahmednour1430464/laravel-stream-backup` | `8.1 / 8.2 / 8.3 / 8.4` | `10.*` | `8.*` | `10.*` |
 | `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3 / 8.4` | `11.*` | `9.*` | `10.* / 11.*` |
 | `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3 / 8.4` | `12.*` | `10.*` | `11.* / 12.*` |
-| `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3 / 8.4` | `13.*` | `11.*` | `11.* / 12.*` |
+| `ahmednour1430464/laravel-stream-backup` | `8.3 / 8.4` | `13.*` | `11.*` | `11.* / 12.*` |
 
 ## Supported Databases
 
