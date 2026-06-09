@@ -1,10 +1,17 @@
 # laravel-stream-backup
 
-> Streaming database → compress → S3 multipart backups for Laravel 10 & 11, with **constant memory use** regardless of database size.
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://packagist.org/packages/ahmednour1430464/laravel-stream-backup)
+[![Total Downloads](https://img.shields.io/packagist/dt/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://packagist.org/packages/ahmednour1430464/laravel-stream-backup)
+[![License](https://img.shields.io/packagist/l/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://packagist.org/packages/ahmednour1430464/laravel-stream-backup)
+[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/ahmednour1430464/laravel-stream-backup/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/ahmednour1430464/laravel-stream-backup/actions?query=workflow%3Atests+branch%3Amain)
+
+> Streaming database → compress → S3 multipart backups **AND** S3 streaming download → decompress → transaction restores for Laravel 10+, with **constant memory use** regardless of database size.
 
 Supports **MySQL**, **PostgreSQL**, **SQLite**, and **custom drivers** via the extensible `DumperFactory`.
 
-The dump process is piped to a compressor (pigz/gzip) which is piped directly into S3 multipart uploads. Nothing is ever buffered to disk and nothing exceeds the 32 MB part buffer in RAM, so a 300 GB database and a 3 GB database use roughly the same amount of memory.
+**Backup**: The dump process is piped to a compressor (pigz/gzip) which is piped directly into S3 multipart uploads. Nothing is ever buffered to disk and nothing exceeds the 32 MB part buffer in RAM, so a 300 GB database and a 3 GB database use roughly the same amount of memory.
+
+**Restore**: S3 objects are downloaded as a stream, decompressed on the fly, and parsed to restore either full databases or specific tables directly into a database transaction, without buffering the backup file to disk.
 
 This package is the productised form of the proof-of-concept script [`backup.php`](./backup.php).
 
@@ -13,7 +20,7 @@ This package is the productised form of the proof-of-concept script [`backup.php
 ## Requirements
 
 - PHP `^8.1` with the `pcntl` and `hash` extensions (PHP `^8.2` required when running on Laravel 11)
-- Laravel `^10.0` or `^11.0`
+- Laravel `^10.0`, `^11.0`, `^12.0`, or `^13.0`
 - An S3-compatible bucket (AWS S3, DigitalOcean Spaces, MinIO, ...)
 - One of the following dump tools on `PATH`:
   - **MySQL**: `mysqldump`
@@ -26,7 +33,9 @@ This package is the productised form of the proof-of-concept script [`backup.php
 | Package | PHP | Laravel | Testbench | PHPUnit |
 |---|---|---|---|---|
 | `ahmednour1430464/laravel-stream-backup` | `8.1 / 8.2 / 8.3` | `10.*` | `8.*` | `10.*` |
-| `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3` | `11.*` | `9.*` | `11.*` |
+| `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3 / 8.4` | `11.*` | `9.*` | `10.* / 11.*` |
+| `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3 / 8.4` | `12.*` | `10.*` | `11.* / 12.*` |
+| `ahmednour1430464/laravel-stream-backup` | `8.2 / 8.3 / 8.4` | `13.*` | `11.*` | `11.* / 12.*` |
 
 ## Supported Databases
 
@@ -79,7 +88,7 @@ These two flags are **mandatory** for Spaces — without them `completeMultipart
 
 ## Usage
 
-### Single database
+### Single database backup
 
 Leave `stream-backup.tenants` empty to fall back to the configured default connection:
 
@@ -106,6 +115,21 @@ Then:
 php artisan backup:all                     # enqueue every tenant
 php artisan backup:tenant 1                # single tenant by id
 php artisan backup:cleanup                 # apply retention policy
+```
+
+### Restore
+
+You can restore a backup directly from S3 without downloading the entire file to disk.
+
+```bash
+# Full restore
+php artisan backup:restore 123
+
+# Restore specific tables only
+php artisan backup:restore 123 --tables=users,posts
+
+# Restore into a different connection (e.g. staging)
+php artisan backup:restore 123 --connection=staging
 ```
 
 ### Custom Dump Drivers
@@ -164,6 +188,8 @@ Add your own `backup:all` cadence to your app's scheduler.
 
 ## Architecture
 
+### Backup Pipeline
+
 ```
 dump process (mysqldump / pg_dump / sqlite3)
    │ stdout (non-blocking)
@@ -175,6 +201,24 @@ dump process (mysqldump / pg_dump / sqlite3)
    │
    ▼
  S3 multipart (32 MB parts, php://temp buffer)
+```
+
+### Restore Pipeline
+
+```
+S3 GetObject (stream)
+   │
+   ▼
+decrypt (if encrypted)
+   │
+   ▼
+decompressor (pigz -d / gzip -d)
+   │ stdout (non-blocking)
+   ▼
+SqlDumpParser (extracts requested tables)
+   │
+   ▼
+TableRestorer (runs inside a DB transaction)
 ```
 
 ### Design Patterns
