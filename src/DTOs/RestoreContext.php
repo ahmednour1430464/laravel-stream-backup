@@ -16,7 +16,7 @@ final class RestoreContext
      * @param string[]         $tables         Tables to restore (empty = full restore)
      * @param string           $connectionName Target Laravel DB connection
      * @param string           $databaseName   Target database name
-     * @param string           $disk           S3 disk to download from
+     * @param string           $disk           Storage disk to download from
      * @param int|string|null  $tenantId       Optional tenant identifier
      */
     public function __construct(

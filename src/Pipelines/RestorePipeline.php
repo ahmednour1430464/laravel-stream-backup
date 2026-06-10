@@ -6,31 +6,29 @@ namespace Ahmednour\StreamBackup\Pipelines;
 
 use Ahmednour\StreamBackup\Contracts\BackupStream;
 use Ahmednour\StreamBackup\Contracts\CompressionDriver;
+use Ahmednour\StreamBackup\Contracts\DownloadDriver;
 use Ahmednour\StreamBackup\DTOs\RestoreContext;
 use Ahmednour\StreamBackup\DTOs\RestoreResult;
 use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
 use Ahmednour\StreamBackup\Enums\RestoreStatus;
-use Ahmednour\StreamBackup\Exceptions\BackupFileNotFoundException;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Restore\SqlDumpParser;
 use Ahmednour\StreamBackup\Restore\TableRestorer;
-use Ahmednour\StreamBackup\Streams\S3DownloadStream;
 use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
-use Aws\S3\S3ClientInterface;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Streaming restore pipeline — the inverse of StreamPipeline.
  *
- *   S3 GetObject (stream) → decrypt (if encrypted) → decompress (pigz -d)
+ *   Download (stream) → decrypt (if encrypted) → decompress (pigz -d)
  *       → SqlDumpParser (line-by-line) → TableRestorer (transaction)
  *
  * Key design choices:
  *
- * 1. Streaming download: S3 GetObject body is consumed as a PHP stream,
- *    never buffered entirely in memory.
+ * 1. Streaming download: The DownloadDriver returns a BackupStream that is
+ *    consumed incrementally, never buffered entirely in memory.
  *
  * 2. Non-blocking decompression: pigz -d is spawned as a child process;
  *    the encrypted/plain stream is piped into its stdin via stream_select()
@@ -51,7 +49,7 @@ final class RestorePipeline
         private readonly EncryptionKeyResolver $keyResolver,
         private readonly SqlDumpParser $parser,
         private readonly TableRestorer $restorer,
-        private readonly S3ClientInterface $s3,
+        private readonly DownloadDriver $downloader,
         private readonly Config $config,
     ) {
     }
@@ -61,27 +59,18 @@ final class RestorePipeline
         Log::debug("[RestorePipeline] run() invoked for backup {$backup->id}.");
         $startTime = microtime(true);
         $readChunk = (int) $this->config->get('stream-backup.read_chunk', 64 * 1024);
-        $bucket    = $this->resolveBucket($backup);
 
-        Log::debug("[RestorePipeline] Bucket resolved: {$bucket}");
-
-        // 1. Verify the backup file exists on S3.
-        $this->assertFileExists($bucket, $backup->path);
-        Log::debug("[RestorePipeline] File exists on S3: {$backup->path}");
+        // 1. Verify the backup file exists on the configured storage.
+        $this->downloader->assertExists($backup->path ?? '');
+        Log::debug("[RestorePipeline] File exists on storage: {$backup->path}");
 
         // 2. Download the backup as a stream.
         if ($onProgress) {
             $onProgress(RestoreStatus::Downloading);
         }
-        Log::debug("[RestorePipeline] Requesting S3 GetObject stream...");
-        $response     = $this->s3->getObject([
-            'Bucket' => $bucket,
-            'Key'    => $backup->path,
-            '@http'  => ['stream' => true],
-        ]);
-        $bodyResource = $this->extractStreamResource($response['Body']);
-        $downloadStream = new S3DownloadStream($bodyResource);
-        Log::debug("[RestorePipeline] S3DownloadStream initialized.");
+        Log::debug("[RestorePipeline] Requesting download stream...");
+        $downloadStream = $this->downloader->download($backup->path);
+        Log::debug("[RestorePipeline] Download stream initialized.");
 
         // 3. Decrypt if the backup was encrypted.
         $isEncrypted = $backup->encryption_driver !== null && $backup->encryption_driver !== '' && $backup->encryption_driver !== 'none';
@@ -336,59 +325,6 @@ final class RestorePipeline
                 trim($stderrBuffer),
             ));
         }
-    }
-
-    private function assertFileExists(string $bucket, ?string $path): void
-    {
-        if ($path === null || $path === '') {
-            throw new BackupFileNotFoundException('Backup has no file path set.');
-        }
-
-        try {
-            $this->s3->headObject([
-                'Bucket' => $bucket,
-                'Key'    => $path,
-            ]);
-        } catch (\Throwable $e) {
-            throw new BackupFileNotFoundException(
-                "Backup file '{$path}' not found in bucket '{$bucket}': {$e->getMessage()}",
-                0,
-                $e,
-            );
-        }
-    }
-
-    private function resolveBucket(Backup $backup): string
-    {
-        $configured = $this->config->get("filesystems.disks.{$backup->disk}.bucket");
-        return is_string($configured) && $configured !== '' ? $configured : $backup->disk;
-    }
-
-    /**
-     * Extract the underlying PHP stream resource from the S3 response body.
-     *
-     * The AWS SDK returns a GuzzleHttp\Psr7\Stream wrapping a PHP resource.
-     *
-     * @return resource
-     */
-    private function extractStreamResource(mixed $body): mixed
-    {
-        // GuzzleHttp\Psr7\Stream::detach() returns the underlying PHP resource.
-        if (is_object($body) && method_exists($body, 'detach')) {
-            $resource = $body->detach();
-            if (is_resource($resource)) {
-                return $resource;
-            }
-        }
-
-        // Fallback: if the body is already a resource.
-        if (is_resource($body)) {
-            return $body;
-        }
-
-        throw new PipelineException(
-            'Unable to extract a stream resource from the S3 response body.'
-        );
     }
 
     /**

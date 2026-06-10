@@ -17,8 +17,12 @@ use Ahmednour\StreamBackup\Encryption\SodiumDriver;
 use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
 use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\Contracts\DatabaseDumper;
+use Ahmednour\StreamBackup\Contracts\DownloadDriver;
 use Ahmednour\StreamBackup\Contracts\TenantResolver;
 use Ahmednour\StreamBackup\Contracts\UploadDriver;
+use Ahmednour\StreamBackup\Downloaders\LocalDownloadDriver;
+use Ahmednour\StreamBackup\Downloaders\S3DownloadDriver;
+use Ahmednour\StreamBackup\Downloaders\SftpDownloadDriver;
 use Ahmednour\StreamBackup\Dumpers\DumperFactory;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
 use Ahmednour\StreamBackup\Jobs\AbortStaleMultipartUploads;
@@ -206,6 +210,71 @@ class StreamBackupServiceProvider extends ServiceProvider
                     $diskName = (string) $config->get('stream-backup.default_disk', 'local');
                     $root     = (string) $config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
                     return new LocalDiskUploader($root);
+                })(),
+
+                default => throw new InvalidConfigException(
+                    "stream-backup: unknown destination driver [{$driver}]. "
+                    . 'Supported drivers: s3, sftp, local.'
+                ),
+            };
+        });
+
+        // Download driver (restore side) — mirrors the UploadDriver binding.
+        $this->app->bind(DownloadDriver::class, function ($app) {
+            $config = $app->make(Config::class);
+            $driver = (string) $config->get('stream-backup.destination.driver', 's3');
+
+            return match ($driver) {
+
+                's3' => (function () use ($app, $config): S3DownloadDriver {
+                    $s3     = $app->make(S3ClientInterface::class);
+                    $diskName = (string) $config->get('stream-backup.default_disk', 'spaces');
+                    $bucket   = (string) $config->get("filesystems.disks.{$diskName}.bucket", $diskName);
+
+                    return new S3DownloadDriver($s3, $bucket);
+                })(),
+
+                'sftp' => (function () use ($config): SftpDownloadDriver {
+                    if (! class_exists(\phpseclib3\Net\SFTP::class)) {
+                        throw new InvalidConfigException(
+                            "stream-backup: SFTP driver requires phpseclib/phpseclib. "
+                            . 'Please run `composer require phpseclib/phpseclib`.'
+                        );
+                    }
+
+                    $cfg  = (array) $config->get('stream-backup.destination', []);
+                    $sftp = new \phpseclib3\Net\SFTP(
+                        $cfg['host'],
+                        (int) ($cfg['port'] ?? 22)
+                    );
+
+                    $authed = isset($cfg['private_key'])
+                        ? $sftp->login(
+                            $cfg['username'],
+                            \phpseclib3\Crypt\PublicKeyLoader::load(
+                                file_get_contents($cfg['private_key']),
+                                $cfg['passphrase'] ?? false
+                            )
+                        )
+                        : $sftp->login($cfg['username'], $cfg['password'] ?? '');
+
+                    if (! $authed) {
+                        throw new InvalidConfigException(
+                            "stream-backup: SFTP authentication failed for host [{$cfg['host']}]. "
+                            . 'Check destination.username and destination.password / private_key.'
+                        );
+                    }
+
+                    return new SftpDownloadDriver(
+                        $sftp,
+                        (string) ($cfg['root'] ?? '')
+                    );
+                })(),
+
+                'local' => (function () use ($config): LocalDownloadDriver {
+                    $diskName = (string) $config->get('stream-backup.default_disk', 'local');
+                    $root     = (string) $config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+                    return new LocalDownloadDriver($root);
                 })(),
 
                 default => throw new InvalidConfigException(
