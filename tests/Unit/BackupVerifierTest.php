@@ -29,18 +29,27 @@ final class BackupVerifierTest extends TestCase
             return [];
         });
 
+        $this->app->instance(S3ClientInterface::class, $s3);
+        
+        config(['stream-backup.destination.driver' => 's3']);
+        config(['filesystems.disks.s3.bucket' => 'test-bucket']);
+
         return $s3;
     }
 
-    private function createVerifier(S3ClientInterface $s3): BackupVerifier
+    private function createVerifier(?EncryptionFactory $factory = null): BackupVerifier
     {
-        return new BackupVerifier($s3, $this->app->make(EncryptionFactory::class));
+        return new BackupVerifier(
+            $this->app,
+            $this->app->make(\Illuminate\Contracts\Config\Repository::class),
+            $factory ?? $this->app->make(EncryptionFactory::class)
+        );
     }
 
     public function test_throws_on_size_mismatch(): void
     {
-        $s3 = $this->createS3Mock(500, "\x1f\x8b");
-        $verifier = $this->createVerifier($s3);
+        $this->createS3Mock(500, "\x1f\x8b");
+        $verifier = $this->createVerifier();
 
         $backup = new Backup([
             'path' => 'test.sql.gz',
@@ -57,8 +66,8 @@ final class BackupVerifierTest extends TestCase
 
     public function test_unencrypted_passes_with_correct_magic_bytes(): void
     {
-        $s3 = $this->createS3Mock(1000, "\x1f\x8b");
-        $verifier = $this->createVerifier($s3);
+        $this->createS3Mock(1000, "\x1f\x8b");
+        $verifier = $this->createVerifier();
 
         $backup = new Backup([
             'path' => 'test.sql.gz',
@@ -73,8 +82,8 @@ final class BackupVerifierTest extends TestCase
 
     public function test_unencrypted_throws_with_incorrect_magic_bytes(): void
     {
-        $s3 = $this->createS3Mock(1000, "\x00\x00");
-        $verifier = $this->createVerifier($s3);
+        $this->createS3Mock(1000, "\x00\x00");
+        $verifier = $this->createVerifier();
 
         $backup = new Backup([
             'path' => 'test.sql.gz',
@@ -91,8 +100,8 @@ final class BackupVerifierTest extends TestCase
 
     public function test_openssl_passes_with_correct_version_byte(): void
     {
-        $s3 = $this->createS3Mock(1000, "\x01\xff");
-        $verifier = $this->createVerifier($s3);
+        $this->createS3Mock(1000, "\x01\xff");
+        $verifier = $this->createVerifier();
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -107,8 +116,8 @@ final class BackupVerifierTest extends TestCase
 
     public function test_openssl_throws_with_incorrect_version_byte(): void
     {
-        $s3 = $this->createS3Mock(1000, "\x02\xff");
-        $verifier = $this->createVerifier($s3);
+        $this->createS3Mock(1000, "\x02\xff");
+        $verifier = $this->createVerifier();
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -125,8 +134,8 @@ final class BackupVerifierTest extends TestCase
 
     public function test_sodium_passes_with_correct_version_byte(): void
     {
-        $s3 = $this->createS3Mock(1000, "\x02\xff");
-        $verifier = $this->createVerifier($s3);
+        $this->createS3Mock(1000, "\x02\xff");
+        $verifier = $this->createVerifier();
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -141,8 +150,8 @@ final class BackupVerifierTest extends TestCase
 
     public function test_sodium_throws_with_incorrect_version_byte(): void
     {
-        $s3 = $this->createS3Mock(1000, "\x01\xff");
-        $verifier = $this->createVerifier($s3);
+        $this->createS3Mock(1000, "\x01\xff");
+        $verifier = $this->createVerifier();
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -169,8 +178,8 @@ final class BackupVerifierTest extends TestCase
             };
         });
 
-        $s3 = $this->createS3Mock(1000, "anything");
-        $verifier = new BackupVerifier($s3, $factory);
+        $this->createS3Mock(1000, "anything");
+        $verifier = $this->createVerifier($factory);
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
@@ -202,8 +211,8 @@ final class BackupVerifierTest extends TestCase
             };
         });
 
-        $s3 = $this->createS3Mock(1000, "XYZ");
-        $verifier = new BackupVerifier($s3, $factory);
+        $this->createS3Mock(1000, "XYZ");
+        $verifier = $this->createVerifier($factory);
 
         $backup = new Backup([
             'path' => 'test.sql.gz.enc',
