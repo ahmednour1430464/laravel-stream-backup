@@ -34,8 +34,15 @@ class AbortStaleMultipartUploads implements ShouldQueue
         $this->staleHours = $staleHours ?? 6;
     }
 
-    public function handle(S3ClientInterface $s3): void
+    public function handle(): void
     {
+        $driver = config('stream-backup.destination.driver', 's3');
+
+        if ($driver !== 's3') {
+            return; // only S3-compatible backends have orphan multipart uploads
+        }
+
+        $s3 = app(S3ClientInterface::class);
         $threshold = now()->subHours($this->staleHours);
 
         Backup::query()

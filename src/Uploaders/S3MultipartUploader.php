@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace Ahmednour\StreamBackup\Uploaders;
@@ -9,80 +8,63 @@ use Ahmednour\StreamBackup\DTOs\BackupMetadata;
 use Ahmednour\StreamBackup\DTOs\UploadResult;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Models\Backup;
+use Ahmednour\StreamBackup\Uploaders\Sessions\S3MultipartSession;
+use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
 use Aws\S3\S3ClientInterface;
 
-/**
- * S3 multipart uploader wired for DigitalOcean Spaces compatibility.
- *
- * `request_checksum_calculation = when_required` and
- * `response_checksum_validation = when_required` (set on the S3Client when
- * it is built in the service provider) are MANDATORY for Spaces — without
- * them AWS SDK >= 3.337 sends extra checksum headers that Spaces rejects
- * with MalformedXML on CompleteMultipartUpload.
- *
- * initiate() persists the UploadId to the backups row BEFORE any part is
- * uploaded, so a worker crash never leaves an orphan upload on S3 with no
- * way to abort it.
- */
 final class S3MultipartUploader implements UploadDriver
 {
-    public function __construct(private readonly S3ClientInterface $s3)
-    {
-    }
+    public function __construct(private readonly S3ClientInterface $s3) {}
 
-    public function initiate(BackupMetadata $metadata): MultipartSession
+    public function initiate(BackupMetadata $metadata): WriteSession
     {
-        $result = $this->s3->createMultipartUpload([
+        $result   = $this->s3->createMultipartUpload([
             'Bucket'      => $metadata->bucket,
             'Key'         => $metadata->path,
             'ContentType' => $metadata->contentType,
         ]);
-
         $uploadId = $result['UploadId'] ?? null;
+
         if (! is_string($uploadId) || $uploadId === '') {
             throw new PipelineException('S3 createMultipartUpload did not return an UploadId.');
         }
 
-        Backup::query()->whereKey($metadata->backupId)->update([
-            'upload_id' => $uploadId,
-        ]);
+        Backup::query()->whereKey($metadata->backupId)->update(['upload_id' => $uploadId]);
 
-        return new MultipartSession($uploadId, $metadata);
+        return new S3MultipartSession($uploadId, $metadata); // ← subclass, not MultipartSession
     }
 
-    public function uploadPart(MultipartSession $session, int $partNumber, $body, int $size): void
+    public function uploadChunk(WriteSession $session, int $chunkNumber, $body, int $size): void
     {
+        assert($session instanceof S3MultipartSession); // only S3MultipartUploader creates these
+
         $result = $this->s3->uploadPart([
             'Bucket'        => $session->metadata->bucket,
             'Key'           => $session->metadata->path,
             'UploadId'      => $session->uploadId,
-            'PartNumber'    => $partNumber,
+            'PartNumber'    => $chunkNumber,
             'Body'          => $body,
             'ContentLength' => $size,
         ]);
 
         $etag = $result['ETag'] ?? null;
         if (! is_string($etag) || $etag === '') {
-            throw new PipelineException(sprintf(
-                'uploadPart returned no ETag for part %d of %s.',
-                $partNumber,
-                $session->metadata->path,
-            ));
+            throw new PipelineException("uploadPart returned no ETag for part {$chunkNumber}.");
         }
 
-        $session->recordPart($partNumber, $etag, $size);
+        $session->recordPart($chunkNumber, $etag, $size);
 
         Backup::query()->whereKey($session->metadata->backupId)->update([
             'parts_uploaded' => $session->partCount(),
         ]);
     }
 
-    public function complete(MultipartSession $session): UploadResult
+    public function complete(WriteSession $session): UploadResult
     {
+        assert($session instanceof S3MultipartSession);
+
         if ($session->parts() === []) {
-            throw new PipelineException(
-                'Refusing to complete a multipart upload with zero parts: the compressed stream produced no data.'
-            );
+            throw new PipelineException('Refusing to complete: zero parts uploaded.');
         }
 
         $this->s3->completeMultipartUpload([
@@ -92,6 +74,26 @@ final class S3MultipartUploader implements UploadDriver
             'MultipartUpload' => ['Parts' => $session->parts()],
         ]);
 
+        return $this->buildResult($session);
+    }
+
+    public function abort(WriteSession $session): void
+    {
+        assert($session instanceof S3MultipartSession);
+
+        try {
+            $this->s3->abortMultipartUpload([
+                'Bucket'   => $session->metadata->bucket,
+                'Key'      => $session->metadata->path,
+                'UploadId' => $session->uploadId,
+            ]);
+        } catch (\Throwable) {
+            // best-effort — stale upload caught by cleanup job
+        }
+    }
+
+    private function buildResult(S3MultipartSession $session): UploadResult
+    {
         $duration = max(0.0, microtime(true) - $session->metadata->startedAt->getTimestamp());
 
         return new UploadResult(
@@ -100,21 +102,7 @@ final class S3MultipartUploader implements UploadDriver
             sizeBytes:       $session->totalBytes(),
             partCount:       $session->partCount(),
             durationSeconds: $duration,
-            checksum:        '', // populated by the pipeline from the ChecksumStream
+            checksum:        '',
         );
-    }
-
-    public function abort(MultipartSession $session): void
-    {
-        try {
-            $this->s3->abortMultipartUpload([
-                'Bucket'   => $session->metadata->bucket,
-                'Key'      => $session->metadata->path,
-                'UploadId' => $session->uploadId,
-            ]);
-        } catch (\Throwable) {
-            // best effort — the stale multipart will be picked up by
-            // the hourly AbortStaleMultipartUploads cleanup job.
-        }
     }
 }

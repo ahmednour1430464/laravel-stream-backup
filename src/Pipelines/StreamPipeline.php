@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ahmednour\StreamBackup\Pipelines;
 
-use Ahmednour\StreamBackup\Contracts\BackupStream;
 use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\Contracts\UploadDriver;
 use Ahmednour\StreamBackup\DTOs\BackupContext;
@@ -19,7 +18,7 @@ use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Streams\ChecksumStream;
 use Ahmednour\StreamBackup\Streams\ProcessBackupStream;
 use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
-use Ahmednour\StreamBackup\Uploaders\MultipartSession;
+use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
 use Illuminate\Contracts\Config\Repository as Config;
 
 /**
@@ -239,11 +238,11 @@ final class StreamPipeline
     /**
      * @param resource $buffer
      */
-    private function flushPart(MultipartSession $session, $buffer, int $size, int $partNumber): void
+    private function flushPart(WriteSession $session, $buffer, int $size, int $partNumber): void
     {
         rewind($buffer);
 
-        $this->uploader->uploadPart($session, $partNumber, $buffer, $size);
+        $this->uploader->uploadChunk($session, $partNumber, $buffer, $size);
 
         // Reuse the same stream instead of re-opening: O(1), no allocation.
         ftruncate($buffer, 0);

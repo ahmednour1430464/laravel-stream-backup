@@ -15,6 +15,18 @@ return [
     */
     'default_disk' => env('STREAM_BACKUP_DISK', 'spaces'),
 
+    'destination' => [
+        'driver' => env('STREAM_BACKUP_DESTINATION_DRIVER', 's3'),
+
+        // sftp only
+        'host'        => env('STREAM_BACKUP_SFTP_HOST'),
+        'port'        => (int) env('STREAM_BACKUP_SFTP_PORT', 22),
+        'username'    => env('STREAM_BACKUP_SFTP_USERNAME'),
+        'password'    => env('STREAM_BACKUP_SFTP_PASSWORD'),
+        'private_key' => env('STREAM_BACKUP_SFTP_PRIVATE_KEY'),  // absolute path to .pem
+        'passphrase'  => env('STREAM_BACKUP_SFTP_PASSPHRASE'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Compression

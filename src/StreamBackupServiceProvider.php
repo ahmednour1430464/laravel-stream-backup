@@ -35,7 +35,9 @@ use Ahmednour\StreamBackup\Support\BackupVerifier;
 use Ahmednour\StreamBackup\Support\BinaryLocator;
 use Ahmednour\StreamBackup\Support\MySQLCredentialFile;
 use Ahmednour\StreamBackup\Support\RetentionClassifier;
+use Ahmednour\StreamBackup\Uploaders\LocalDiskUploader;
 use Ahmednour\StreamBackup\Uploaders\S3MultipartUploader;
+use Ahmednour\StreamBackup\Uploaders\SftpChunkedUploader;
 use Aws\S3\S3Client;
 use Aws\S3\S3ClientInterface;
 use Illuminate\Console\Scheduling\Event;
@@ -131,7 +133,78 @@ class StreamBackupServiceProvider extends ServiceProvider
         });
 
         // Uploader
-        $this->app->bind(UploadDriver::class, S3MultipartUploader::class);
+        $this->app->bind(UploadDriver::class, function ($app) {
+            $config = $app->make(Config::class);
+            $driver = (string) $config->get('stream-backup.destination.driver', 's3');
+
+            return match ($driver) {
+
+                's3' => (function () use ($app, $config): S3MultipartUploader {
+                    $diskName = (string) $config->get('stream-backup.default_disk', 'spaces');
+                    $diskCfg  = (array)  $config->get("filesystems.disks.{$diskName}", []);
+
+                    $s3 = new S3Client([
+                        'version'                      => 'latest',
+                        'region'                       => $diskCfg['region']   ?? 'us-east-1',
+                        'endpoint'                     => $diskCfg['endpoint'] ?? null,
+                        'credentials'                  => [
+                            'key'    => $diskCfg['key']    ?? '',
+                            'secret' => $diskCfg['secret'] ?? '',
+                        ],
+                        'use_path_style_endpoint'      => (bool) ($diskCfg['use_path_style_endpoint'] ?? false),
+                        'request_checksum_calculation' => 'when_required',  // mandatory for Spaces
+                        'response_checksum_validation' => 'when_required',
+                    ]);
+
+                    // Keep the interface binding alive so any code that
+                    // type-hints S3ClientInterface still resolves correctly.
+                    $app->instance(S3ClientInterface::class, $s3);
+
+                    return new S3MultipartUploader($s3);
+                })(),
+
+                'sftp' => (function () use ($config): SftpChunkedUploader {
+                    if (! class_exists(\phpseclib3\Net\SFTP::class)) {
+                        throw new InvalidConfigException(
+                            "stream-backup: SFTP driver requires phpseclib/phpseclib. "
+                            . 'Please run `composer require phpseclib/phpseclib`.'
+                        );
+                    }
+
+                    $cfg  = (array) $config->get('stream-backup.destination', []);
+                    $sftp = new \phpseclib3\Net\SFTP(
+                        $cfg['host'],
+                        (int) ($cfg['port'] ?? 22)
+                    );
+
+                    $authed = isset($cfg['private_key'])
+                        ? $sftp->login(
+                            $cfg['username'],
+                            \phpseclib3\Crypt\PublicKeyLoader::load(
+                                file_get_contents($cfg['private_key']),
+                                $cfg['passphrase'] ?? false
+                            )
+                        )
+                        : $sftp->login($cfg['username'], $cfg['password'] ?? '');
+
+                    if (! $authed) {
+                        throw new InvalidConfigException(
+                            "stream-backup: SFTP authentication failed for host [{$cfg['host']}]. "
+                            . 'Check destination.username and destination.password / private_key.'
+                        );
+                    }
+
+                    return new SftpChunkedUploader($sftp);
+                })(),
+
+                'local' => new LocalDiskUploader(),
+
+                default => throw new InvalidConfigException(
+                    "stream-backup: unknown destination driver [{$driver}]. "
+                    . 'Supported drivers: s3, sftp, local.'
+                ),
+            };
+        });
 
         // Tenant resolver: if the tenants array is empty, fall back to a
         // single-database resolver so `backup:all` works on non-multi-tenant apps.
