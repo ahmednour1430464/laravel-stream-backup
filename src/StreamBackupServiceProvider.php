@@ -202,7 +202,11 @@ class StreamBackupServiceProvider extends ServiceProvider
                     );
                 })(),
 
-                'local' => new LocalDiskUploader(),
+                'local' => (function () use ($config): LocalDiskUploader {
+                    $diskName = (string) $config->get('stream-backup.default_disk', 'local');
+                    $root     = (string) $config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+                    return new LocalDiskUploader($root);
+                })(),
 
                 default => throw new InvalidConfigException(
                     "stream-backup: unknown destination driver [{$driver}]. "

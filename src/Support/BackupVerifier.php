@@ -89,14 +89,19 @@ final class BackupVerifier
                 $magic = (string) $sftp->get($remotePath, false, 0, $length);
             }
         } elseif ($driverName === 'local') {
-            if (! file_exists($backup->path)) {
-                throw new \RuntimeException("Local backup file not found for verification: {$backup->path}");
+            $diskName  = (string) $this->config->get('stream-backup.default_disk', 'local');
+            $root      = (string) $this->config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+            $localPath = ltrim($backup->path, '/');
+            $localPath = $root !== '' ? rtrim($root, '/') . '/' . $localPath : $localPath;
+
+            if (! file_exists($localPath)) {
+                throw new \RuntimeException("Local backup file not found for verification: {$localPath}");
             }
 
-            $remoteSize = (int) filesize($backup->path);
+            $remoteSize = (int) filesize($localPath);
 
             if ($length > 0) {
-                $fp = fopen($backup->path, 'rb');
+                $fp = fopen($localPath, 'rb');
                 if ($fp !== false) {
                     $magic = (string) fread($fp, $length);
                     fclose($fp);

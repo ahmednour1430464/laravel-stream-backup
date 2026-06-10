@@ -13,19 +13,30 @@ use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
 
 final class LocalDiskUploader implements UploadDriver
 {
+    public function __construct(
+        private readonly string $root = '',
+    ) {}
+
+    private function resolvePath(string $path): string
+    {
+        $path = ltrim($path, '/');
+        return $this->root !== '' ? rtrim($this->root, '/') . '/' . $path : $path;
+    }
+
     public function initiate(BackupMetadata $metadata): WriteSession
     {
-        $dir = dirname($metadata->path);
+        $fullPath = $this->resolvePath($metadata->path);
+        $dir = dirname($fullPath);
         if (! is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
 
-        $handle = fopen($metadata->path, 'wb');
+        $handle = fopen($fullPath, 'wb');
         if (! is_resource($handle)) {
-            throw new PipelineException("Cannot open local path for writing: {$metadata->path}");
+            throw new PipelineException("Cannot open local path for writing: {$fullPath}");
         }
 
-        return new LocalWriteSession($handle, $metadata->path, $metadata);
+        return new LocalWriteSession($handle, $fullPath, $metadata);
     }
 
     public function uploadChunk(WriteSession $session, int $chunkNumber, $body, int $size): void
