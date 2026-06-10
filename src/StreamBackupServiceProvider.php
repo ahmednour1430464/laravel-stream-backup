@@ -194,7 +194,12 @@ class StreamBackupServiceProvider extends ServiceProvider
                         );
                     }
 
-                    return new SftpChunkedUploader($sftp);
+                    return new SftpChunkedUploader(
+                        $sftp,
+                        (string) ($cfg['root'] ?? ''),
+                        (string) ($cfg['visibility'] ?? 'public'),
+                        (string) ($cfg['directory_visibility'] ?? 'public')
+                    );
                 })(),
 
                 'local' => new LocalDiskUploader(),

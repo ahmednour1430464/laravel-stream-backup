@@ -25,6 +25,9 @@ return [
         'password'    => env('STREAM_BACKUP_SFTP_PASSWORD'),
         'private_key' => env('STREAM_BACKUP_SFTP_PRIVATE_KEY'),  // absolute path to .pem
         'passphrase'  => env('STREAM_BACKUP_SFTP_PASSPHRASE'),
+        'visibility'  => 'public', // `private` = 0600, `public` = 0700
+        'directory_visibility' => 'public', // `private` = 0700, `public` = 0755
+        'root'        => env('STREAM_BACKUP_SFTP_ROOT'),
     ],
 
     /*

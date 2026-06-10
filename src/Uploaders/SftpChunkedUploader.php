@@ -16,17 +16,55 @@ use phpseclib3\Net\SFTP;
 
 final class SftpChunkedUploader implements UploadDriver
 {
-    public function __construct(private readonly SFTP $sftp) {}
+    public function __construct(
+        private readonly SFTP $sftp,
+        private readonly string $root = '',
+        private readonly string $visibility = 'public',
+        private readonly string $directoryVisibility = 'public'
+    ) {}
+
+    private function resolvePath(string $path): string
+    {
+        $path = ltrim($path, '/');
+        return $this->root !== '' ? rtrim($this->root, '/') . '/' . $path : $path;
+    }
+
+    private function getFileMode(): int
+    {
+        return $this->visibility === 'private' ? 0600 : 0700;
+    }
+
+    private function getDirectoryMode(): int
+    {
+        return $this->directoryVisibility === 'private' ? 0700 : 0755;
+    }
+
+    private function ensureDirectoryExists(string $dir): void
+    {
+        if ($dir === '.' || $dir === '/' || $dir === '') {
+            return;
+        }
+
+        if (! $this->sftp->is_dir($dir)) {
+            $this->sftp->mkdir($dir, $this->getDirectoryMode(), true);
+        }
+    }
 
     public function initiate(BackupMetadata $metadata): WriteSession
     {
+        $remotePath = $this->resolvePath($metadata->path);
+        
+        $this->ensureDirectoryExists(dirname($remotePath));
+
         // Create or truncate the remote file once
-        if (! $this->sftp->put($metadata->path, '', SFTP::RESUME)) {
-            throw new PipelineException("Cannot open remote path for writing: {$metadata->path}");
+        if (! $this->sftp->put($remotePath, '', SFTP::RESUME)) {
+            throw new PipelineException("Cannot open remote path for writing: {$remotePath}");
         }
 
+        $this->sftp->chmod($this->getFileMode(), $remotePath);
+
         // No uploadId — the open SSH channel IS the session
-        return new SftpWriteSession($this->sftp, $metadata->path, $metadata);
+        return new SftpWriteSession($this->sftp, $remotePath, $metadata);
     }
 
     public function uploadChunk(WriteSession $session, int $chunkNumber, $body, int $size): void
@@ -40,7 +78,7 @@ final class SftpChunkedUploader implements UploadDriver
         }
 
         // RESUME|STRING appends at current EOF — no offset tracking needed
-        if (! $this->sftp->put($session->remotePath, $data, SFTP::RESUME | SFTP::STRING)) {
+        if (! $this->sftp->put($session->remotePath, $data, SFTP::RESUME | SFTP::SOURCE_STRING)) {
             throw new PipelineException("SFTP write failed on chunk {$chunkNumber}.");
         }
 
