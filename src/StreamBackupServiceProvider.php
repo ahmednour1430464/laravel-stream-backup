@@ -8,6 +8,7 @@ use Ahmednour\StreamBackup\Commands\BackupAllCommand;
 use Ahmednour\StreamBackup\Commands\BackupCleanupCommand;
 use Ahmednour\StreamBackup\Commands\BackupTenantCommand;
 use Ahmednour\StreamBackup\Commands\RestoreBackupCommand;
+use Ahmednour\StreamBackup\Compression\AutoCompressionDriver;
 use Ahmednour\StreamBackup\Compression\GzipDriver;
 use Ahmednour\StreamBackup\Compression\PigzDriver;
 use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
@@ -103,11 +104,12 @@ class StreamBackupServiceProvider extends ServiceProvider
         // Compression driver switch
         $this->app->bind(CompressionDriver::class, function ($app) {
             $config = $app->make(Config::class);
-            $driver = (string) $config->get('stream-backup.compression.driver', 'pigz');
+            $driver = (string) $config->get('stream-backup.compression.driver', 'auto');
             $level  = (int) $config->get('stream-backup.compression.level', 4);
             $locator = $app->make(BinaryLocator::class);
 
             return match ($driver) {
+                'auto' => new AutoCompressionDriver($locator, $level, $app->make(\Psr\Log\LoggerInterface::class)),
                 'pigz' => new PigzDriver($locator, $level),
                 'gzip' => new GzipDriver($locator, $level),
                 default => throw new InvalidConfigException("Unknown compression driver '{$driver}'."),

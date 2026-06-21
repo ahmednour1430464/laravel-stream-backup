@@ -35,13 +35,18 @@ return [
     | Compression
     |--------------------------------------------------------------------------
     |
+    | driver: 'auto' (default) — prefers pigz for multi-core parallel
+    |         compression, automatically falls back to gzip (universally
+    |         available) with a log notice if pigz is not installed.
+    |         Explicit: 'pigz', 'gzip'.
+    |
     | Level 4 is a deliberate default: roughly 80% of the compression ratio
     | of level 6 at ~50% of the CPU cost, which keeps pigz from becoming
     | the bottleneck on databases above ~10 GB.
     |
     */
     'compression' => [
-        'driver' => env('STREAM_BACKUP_COMPRESSION_DRIVER', 'pigz'),
+        'driver' => env('STREAM_BACKUP_COMPRESSION_DRIVER', 'auto'),
         'level'  => (int) env('STREAM_BACKUP_COMPRESSION_LEVEL', 4),
     ],
 
