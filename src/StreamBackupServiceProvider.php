@@ -306,11 +306,8 @@ class StreamBackupServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__ . '/../config/stream-backup.php' => config_path('stream-backup.php'),
-            ], 'stream-backup-config');
-
-            $this->publishes([
                 __DIR__ . '/../database/migrations' => database_path('migrations'),
-            ], 'stream-backup-migrations');
+            ], 'stream-backup');
 
             $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
