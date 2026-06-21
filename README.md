@@ -5,13 +5,13 @@
 [![License](https://img.shields.io/packagist/l/ahmednour1430464/laravel-stream-backup.svg?style=flat-square)](https://github.com/ahmednour1430464/laravel-stream-backup/blob/main/LICENSE.md)
 [![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/ahmednour1430464/laravel-stream-backup/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/ahmednour1430464/laravel-stream-backup/actions?query=workflow%3Atests+branch%3Amain)
 
-> Streaming database → compress → S3 multipart backups **AND** S3 streaming download → decompress → transaction restores for Laravel 10+, with **constant memory use** regardless of database size.
+> Streaming database → compress → (optional encrypt) → multipart backups **AND** streaming download → decrypt → decompress → transaction restores for Laravel 10+, with **constant memory use** regardless of database size.
 
 Supports **MySQL**, **PostgreSQL**, **SQLite**, and **custom drivers** via the extensible `DumperFactory`.
 
-**Backup**: The dump process is piped to a compressor (pigz/gzip) which is piped directly into S3 multipart uploads. Nothing is ever buffered to disk and nothing exceeds the 32 MB part buffer in RAM, so a 300 GB database and a 3 GB database use roughly the same amount of memory.
+**Backup**: The dump process is piped to a compressor (auto-detected: pigz/gzip) which is optionally encrypted, then streamed directly into S3 multipart uploads, SFTP chunked uploads, or local disk. Nothing is ever buffered to disk and nothing exceeds the 32 MB part buffer in RAM, so a 300 GB database and a 3 GB database use roughly the same amount of memory.
 
-**Restore**: S3 objects are downloaded as a stream, decompressed on the fly, and parsed to restore either full databases or specific tables directly into a database transaction, without buffering the backup file to disk.
+**Restore**: Backup files are downloaded as a stream from S3, SFTP, or local disk, decrypted (if encrypted), decompressed on the fly, and parsed to restore either full databases or specific tables directly into a database transaction, without buffering the backup file to disk.
 
 This package is the productised form of the proof-of-concept script [`backup.php`](./backup.php).
 
@@ -23,24 +23,27 @@ While `spatie/laravel-backup` is an excellent and widely used package, it has a 
 
 | Feature | `spatie/laravel-backup` | `laravel-stream-backup` |
 | --- | --- | --- |
-| **Backup Process** | Dumps to local disk → Zips on disk → Uploads to S3 | Streams dump to compressor → Streams directly to S3 |
+| **Backup Process** | Dumps to local disk → Zips on disk → Uploads to S3 | Streams dump to compressor → Streams directly to destination |
+| **Destination Drivers** | S3, local | **S3, SFTP, Local disk** |
 | **Local Disk Required** | Yes (>100% of DB size) | **No (Zero bytes)** |
 | **Memory Usage** | Variable | **Constant (~32 MB buffer)** |
-| **Restore Process** | ❌ No built-in restore | Streams from S3 → Decompresses to temp file → Imports |
+| **Encryption** | ❌ No built-in encryption | **AES-256-GCM or XChaCha20-Poly1305** |
+| **Restore Process** | ❌ No built-in restore | Streams from any driver → Decrypts → Decompresses → Imports |
 | **Best For** | Small to medium databases | Large databases & multi-tenant setups |
 
 ---
 
 ## Requirements
 
-- PHP `^8.1` with the `pcntl` and `hash` extensions (PHP `^8.2` required when running on Laravel 11)
+- PHP `^8.1` with the `pcntl` and `hash` extensions (PHP `^8.2` required when running on Laravel 11+)
 - Laravel `^10.0`, `^11.0`, `^12.0`, or `^13.0`
-- An S3-compatible bucket (AWS S3, DigitalOcean Spaces, MinIO, ...)
+- A supported destination: S3-compatible bucket, SFTP server, or local disk
 - One of the following dump tools on `PATH`:
   - **MySQL**: `mysqldump`
   - **PostgreSQL**: `pg_dump`
   - **SQLite**: `sqlite3`
-- `pigz` on `PATH` (falls back to built-in `gzip` driver if unavailable)
+- `pigz` on `PATH` for optimal performance (auto-falls back to built-in `gzip` if unavailable)
+- *Optional*: `ext-openssl` for AES-256-GCM encryption, or `ext-sodium` for XChaCha20-Poly1305
 
 ### Compatibility matrix
 
@@ -60,14 +63,23 @@ While `spatie/laravel-backup` is an excellent and widely used package, it has a 
 | SQLite     | `sqlite3`    | N/A (file-based, no auth) | Reads path from Laravel config |
 | Custom     | Your choice  | Your choice | Register via `DumperFactory::extend()` |
 
+## Supported Destinations
+
+| Driver | Upload | Download (Restore) | Notes |
+|---|---|---|---|
+| **S3** | `S3MultipartUploader` | `S3DownloadDriver` | AWS S3, DigitalOcean Spaces, MinIO, etc. |
+| **SFTP** | `SftpChunkedUploader` | `SftpDownloadDriver` | Requires `phpseclib/phpseclib ^3.0`; supports key-based auth |
+| **Local** | `LocalDiskUploader` | `LocalDownloadDriver` | Any local/mounted filesystem |
+
 ## Installation
 
 ```bash
 composer require ahmednour1430464/laravel-stream-backup
-php artisan vendor:publish --tag=stream-backup-config
-php artisan vendor:publish --tag=stream-backup-migrations
+php artisan vendor:publish --tag=stream-backup
 php artisan migrate
 ```
+
+The unified `stream-backup` tag publishes both the configuration file and database migrations in a single command.
 
 The service provider is auto-discovered.
 
@@ -77,7 +89,8 @@ Add these to `.env` (see [`.env.example`](./.env.example) for the full list):
 
 ```dotenv
 STREAM_BACKUP_DISK=spaces
-STREAM_BACKUP_COMPRESSION_DRIVER=pigz
+STREAM_BACKUP_DESTINATION_DRIVER=s3          # s3 | sftp | local
+STREAM_BACKUP_COMPRESSION_DRIVER=auto        # auto | pigz | gzip
 STREAM_BACKUP_COMPRESSION_LEVEL=4
 STREAM_BACKUP_MAX_CONCURRENT=2
 STREAM_BACKUP_QUEUE_CONNECTION=redis
@@ -85,9 +98,34 @@ STREAM_BACKUP_QUEUE=backups
 
 # Database dump driver: 'auto' (default), 'mysql', 'pgsql', 'sqlite'
 STREAM_BACKUP_DUMP_DRIVER=auto
+
+# Encryption (optional)
+STREAM_BACKUP_ENCRYPTION_DRIVER=none         # none | openssl-aes-256-gcm | sodium
+STREAM_BACKUP_ENCRYPTION_KEY=                # base64-encoded 32-byte key
+
+# SFTP destination (when STREAM_BACKUP_DESTINATION_DRIVER=sftp)
+STREAM_BACKUP_SFTP_HOST=
+STREAM_BACKUP_SFTP_PORT=22
+STREAM_BACKUP_SFTP_USERNAME=
+STREAM_BACKUP_SFTP_PASSWORD=
+STREAM_BACKUP_SFTP_PRIVATE_KEY=              # absolute path to .pem
+STREAM_BACKUP_SFTP_ROOT=
+
+# Schedule customisation
+STREAM_BACKUP_AUTO_SCHEDULE=true
+STREAM_BACKUP_SCHEDULE_TZ=UTC
+STREAM_BACKUP_CLEANUP_FREQUENCY=daily        # daily | hourly | weekly | monthly | cron
+STREAM_BACKUP_CLEANUP_TIME=03:15
+STREAM_BACKUP_STALE_FREQUENCY=hourly         # hourly | everyMinutes | cron
 ```
 
-When set to `auto`, the dump driver is detected from your default Laravel database connection (`database.default`).
+### Auto-detect compression
+
+When `STREAM_BACKUP_COMPRESSION_DRIVER` is set to `auto` (the default), the package probes for `pigz` on `PATH` and uses it for multi-core parallel compression. If `pigz` is not installed, it gracefully falls back to `gzip` with a log notice.
+
+### Auto-detect dump driver
+
+When `STREAM_BACKUP_DUMP_DRIVER` is set to `auto` (the default), the dump driver is detected from your default Laravel database connection (`database.default`).
 
 ### DigitalOcean Spaces compatibility
 
@@ -133,7 +171,7 @@ php artisan backup:cleanup                 # apply retention policy
 
 ### Restore
 
-You can restore a backup directly from S3 without downloading the entire file to disk.
+You can restore a backup directly from any configured storage driver without downloading the entire file to disk.
 
 ```bash
 # Full restore
@@ -145,6 +183,8 @@ php artisan backup:restore 123 --tables=users,posts
 # Restore into a different connection (e.g. staging)
 php artisan backup:restore 123 --connection=staging
 ```
+
+Encrypted backups are automatically decrypted during restore using the configured encryption key.
 
 ### Custom Dump Drivers
 
@@ -171,26 +211,74 @@ Then reference the driver in config or per-tenant:
 ['connection' => 'mongo', 'database' => 'analytics', 'driver' => 'mongodb'],
 ```
 
+### Custom Encryption Drivers
+
+Register custom encryption drivers via `EncryptionFactory::extend()`:
+
+```php
+use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
+
+public function boot(): void
+{
+    $this->app->make(EncryptionFactory::class)->extend('age', function ($app) {
+        return new AgeEncryptionDriver(/* ... */);
+    });
+}
+```
+
 ### Scheduling
 
 `auto_schedule` (enabled by default) registers:
 
-- `stream-backup:abort-stale-multipart` hourly — aborts orphaned multipart uploads on the bucket
-- `stream-backup:cleanup` daily at 03:15 UTC — prunes old backups per retention tier
+- `stream-backup:abort-stale-multipart` — aborts orphaned multipart uploads on the bucket
+- `stream-backup:cleanup` — prunes old backups per retention tier
+
+Both jobs support configurable frequencies via config or env vars:
+
+| Job | Supported Frequencies | Default |
+|---|---|---|
+| `cleanup` | `daily`, `hourly`, `weekly`, `monthly`, `cron` | `daily` at `03:15` |
+| `stale_multipart` | `hourly`, `everyMinutes`, `cron` | `hourly` |
+
+Invalid frequency values throw `InvalidConfigException` at boot time so typos surface immediately.
 
 Add your own `backup:all` cadence to your app's scheduler.
+
+## Encryption
+
+Backups can be encrypted at rest using either of two built-in drivers:
+
+| Driver | Algorithm | Extension | Notes |
+|---|---|---|---|
+| `none` | — | — | Default, zero overhead |
+| `openssl-aes-256-gcm` | AES-256-GCM | `ext-openssl` | Industry-standard, hardware-accelerated on most CPUs |
+| `sodium` | XChaCha20-Poly1305 | `ext-sodium` | Modern AEAD, constant-time, no AES-NI dependency |
+
+Pipeline with encryption enabled: `mysqldump → pigz → encrypt → SHA-256 → S3`
+
+Generate a key:
+
+```bash
+php -r "echo base64_encode(random_bytes(32));"
+```
+
+> ⚠️ **WARNING**: Losing the encryption key makes ALL encrypted backups permanently unrecoverable. Store it in AWS Secrets Manager, HashiCorp Vault, or an equivalent secrets manager. This package will never generate, store, or log key material.
 
 ## Configuration overview
 
 | Key | Default | Purpose |
 |---|---|---|
-| `default_disk` | `spaces` | Filesystem disk; must be S3-compatible |
+| `default_disk` | `spaces` | Filesystem disk; must be S3-compatible when using S3 driver |
+| `destination.driver` | `s3` | `s3`, `sftp`, or `local` |
 | `dump.driver` | `auto` | `auto`, `mysql`, `pgsql`, `sqlite`, or custom |
 | `dump.drivers.mysql.binary` | `mysqldump` | Path/name of the mysqldump binary |
 | `dump.drivers.pgsql.binary` | `pg_dump` | Path/name of the pg_dump binary |
 | `dump.drivers.sqlite.binary` | `sqlite3` | Path/name of the sqlite3 binary |
-| `compression.driver` | `pigz` | `pigz` (parallel) or `gzip` (single-threaded fallback) |
+| `compression.driver` | `auto` | `auto` (prefers pigz, falls back to gzip), `pigz`, or `gzip` |
 | `compression.level` | `4` | Level 4 trades ~20% ratio for ~50% less CPU vs level 6 |
+| `encryption.driver` | `none` | `none`, `openssl-aes-256-gcm`, `sodium`, or custom |
+| `encryption.key` | — | Base64-encoded 32-byte raw key |
+| `encryption.key_file` | — | Path to file containing raw binary key (32 bytes) |
 | `multipart.part_size` | 32 MB | Must be ≥ 5 MB; keeps part count < 10 000 even at 300 GB |
 | `read_chunk` | 64 KB | Bytes pulled per `stream_select` iteration |
 | `retention.daily` | 7 | Daily backups kept |
@@ -199,6 +287,11 @@ Add your own `backup:all` cadence to your app's scheduler.
 | `queue.max_concurrent` | 2 | Atomic semaphore cap across all workers |
 | `queue.slot_ttl` | 21 600 s | Semaphore lease (6 h) |
 | `verify_after_upload` | `true` | Validates object size + gzip magic bytes after completion |
+| `auto_schedule` | `true` | Auto-register cleanup/stale-abort on Laravel scheduler |
+| `schedule.cleanup.frequency` | `daily` | Cleanup job cadence |
+| `schedule.cleanup.time` | `03:15` | HH:MM (24h) for daily/weekly/monthly cleanup |
+| `schedule.stale_multipart.frequency` | `hourly` | Stale multipart abort cadence |
+| `schedule.stale_multipart.stale_hours` | `6` | Hours before a multipart upload is considered stale |
 
 ## Architecture
 
@@ -208,22 +301,25 @@ Add your own `backup:all` cadence to your app's scheduler.
 dump process (mysqldump / pg_dump / sqlite3)
    │ stdout (non-blocking)
    ▼
-  compressor (pigz / gzip)
+  compressor (pigz / gzip — auto-detected)
    │ stdout (non-blocking)
+   ▼
+ encryption (AES-256-GCM / XChaCha20 / none)
+   │
    ▼
  ChecksumStream (SHA-256 tee)
    │
    ▼
- S3 multipart (32 MB parts, php://temp buffer)
+ destination driver (S3 multipart / SFTP chunked / local disk)
 ```
 
 ### Restore Pipeline
 
 ```
-S3 GetObject (stream)
-   │
+destination driver (S3 GetObject / SFTP read / local file)
+   │ stream
    ▼
-decrypt (if encrypted)
+decrypt (if encrypted — auto-detected from backup record)
    │
    ▼
 decompressor (pigz -d / gzip -d)
@@ -239,18 +335,21 @@ TableRestorer (runs inside a DB transaction)
 
 | Pattern | Where | Purpose |
 |---|---|---|
-| **Strategy** | `DatabaseDumper` interface + concrete dumpers | Swappable dump algorithms |
+| **Strategy** | `DatabaseDumper` / `CompressionDriver` / `EncryptionDriver` / `UploadDriver` / `DownloadDriver` interfaces | Swappable algorithms across all pipeline stages |
 | **Template Method** | `AbstractProcessDumper` | Shared proc_open boilerplate |
-| **Abstract Factory** | `DumperFactory` with `extend()` | Driver resolution + extensibility |
-| **Dependency Inversion** | `StreamPipeline` depends on `DumperFactory`, not concrete dumpers | Decoupled pipeline |
+| **Abstract Factory** | `DumperFactory` / `EncryptionFactory` with `extend()` | Driver resolution + extensibility |
+| **Polymorphic Sessions** | `WriteSession` subclasses per upload driver | Driver-specific upload state without leaking internals |
+| **Dependency Inversion** | `StreamPipeline` / `RestorePipeline` depend on contracts, not concrete drivers | Decoupled pipeline |
 | **Open/Closed** | New drivers = new class + `extend()` call, zero edits to existing code | Extensibility |
 
 ### Key design points
 
 - **Write-side `stream_select`** with a `$pendingChunk` buffer — never busy-waits on blocked pipes.
 - **Exit-code validation before `completeMultipartUpload`** — refuses to commit objects when the dump or compression process exited non-zero or printed recognisable errors to stderr.
+- **Driver-specific preflight checks** — each upload driver performs a write+delete test using its own transport (S3, SFTP, local FS) before starting the backup.
 - **`php://temp` part buffer** — zero copy, spills to disk past 2 MB.
 - **Secure credential handling** — MySQL: temp file with `chmod 0600`; PostgreSQL: `PGPASSWORD` env var; SQLite: no credentials needed.
+- **Encryption key isolation** — raw key material is resolved just-in-time by `EncryptionKeyResolver`, passed to the driver, and wiped from memory on `close()`.
 - **Redis-backed semaphore** via `Cache::lock()` prevents dozens of simultaneous dumps.
 - **State-machine enum** (`BackupStatus`) with explicit `canTransitionTo()` guards every model transition.
 - **SIGTERM handling** with `pcntl_async_signals(true)` inside `RunBackupJob` — in-flight multipart uploads are aborted on graceful shutdown.
@@ -262,8 +361,11 @@ All of these are resolved from the container and can be swapped:
 
 - `DatabaseDumper` — default resolved by `DumperFactory` based on config
 - `DumperFactory` — singleton with `extend()` for custom drivers
-- `CompressionDriver` — `PigzDriver` or `GzipDriver`
-- `UploadDriver` — default is `S3MultipartUploader`
+- `CompressionDriver` — `AutoCompressionDriver` (default), `PigzDriver`, or `GzipDriver`
+- `EncryptionDriver` — `NullEncryptionDriver`, `OpenSslAes256GcmDriver`, `SodiumDriver`, or custom via `EncryptionFactory::extend()`
+- `EncryptionFactory` — singleton with `extend()` for custom encryption drivers
+- `UploadDriver` — `S3MultipartUploader`, `SftpChunkedUploader`, or `LocalDiskUploader`
+- `DownloadDriver` — `S3DownloadDriver`, `SftpDownloadDriver`, or `LocalDownloadDriver`
 - `TenantResolver` — `ConfigTenantResolver` when `tenants` is populated, `SingleDatabaseResolver` otherwise
 - `BackupStream` — chunked non-blocking stream abstraction
 
@@ -279,13 +381,58 @@ Unit tests cover:
 - `DumperFactory` (driver resolution, auto-detection, extend API, error handling)
 - `PostgreSQLDumper` (CLI args, PGPASSWORD env, password not in command)
 - `SQLiteDumper` (database path, file validation, .dump invocation)
+- `AutoCompressionDriver` (pigz preference, gzip fallback, binary detection)
 - `RetentionClassifier` (daily / weekly / monthly Sunday logic)
 - `BackupPathBuilder` (tenant-scoped and `_global` paths)
 - `BackupStatus` transitions (state-machine integrity)
 - `ChecksumStream` (SHA-256 equivalence to `hash('sha256', $payload)`)
 - `BackupSemaphore` (acquire / release / over-limit)
+- `BackupVerifier` (post-upload validation across S3, SFTP, local drivers)
+- `EncryptionFactory` (driver resolution, extend API, error handling)
+- `EncryptionKeyResolver` (env key, file key, validation)
+- `NullEncryptionDriver` (passthrough behaviour)
+- `OpenSslAes256GcmDriver` (encrypt / decrypt round-trip, key length, tamper detection)
+- `SodiumDriver` (encrypt / decrypt round-trip, key length, tamper detection)
 
 The feature test `StreamPipelineSmokeTest` is auto-skipped unless a dump tool + compressor are on `PATH` and `STREAM_BACKUP_TEST_*` env vars are set.
+
+## Changelog
+
+### v1.3.1
+- Dispatch cleanup jobs to configured queue and connection
+- Consolidated config + migration publish tags into unified `stream-backup` tag
+
+### v1.3.0
+- Auto-detect compression driver: prefers `pigz`, falls back to `gzip` with log notice
+- Compression default changed from `pigz` to `auto`
+
+### v1.2.1
+- Driver-specific preflight checks replace filesystem-based verification
+- Updated dependency constraints
+
+### v1.2.0
+- Multi-driver restore support (S3, SFTP, Local)
+- Download logic abstracted into driver-based architecture
+
+### v1.1.3
+- `LocalDiskUploader` resolves backup path against disk root directory
+
+### v1.1.2
+- `BackupVerifier` expanded to support local and SFTP storage drivers
+
+### v1.1.1
+- SFTP root path support, customizable file/directory permissions, automatic directory creation
+
+### v1.1.0
+- Polymorphic `WriteSession` architecture
+- `SftpChunkedUploader` and `LocalDiskUploader` support
+- Encryption: AES-256-GCM (`ext-openssl`) and XChaCha20-Poly1305 (`ext-sodium`)
+- `EncryptionFactory` with `extend()` for custom encryption drivers
+
+### v1.0.0
+- Initial release: streaming backup & restore for MySQL, PostgreSQL, SQLite
+- S3 multipart upload with constant memory
+- Multi-tenant support, retention policies, configurable scheduling
 
 ## License
 
