@@ -23,8 +23,11 @@ class BackupCleanupCommand extends Command
             return self::SUCCESS;
         }
 
-        BackupCleanupJob::dispatch();
-        AbortStaleMultipartUploads::dispatch();
+        $queue = config('stream-backup.schedule.queue');
+        $connection = config('stream-backup.schedule.connection');
+
+        BackupCleanupJob::dispatch()->onConnection($connection)->onQueue($queue);
+        AbortStaleMultipartUploads::dispatch()->onConnection($connection)->onQueue($queue);
         $this->info('Cleanup jobs dispatched.');
         return self::SUCCESS;
     }
