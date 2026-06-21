@@ -164,7 +164,8 @@ class StreamBackupServiceProvider extends ServiceProvider
                     // type-hints S3ClientInterface still resolves correctly.
                     $app->instance(S3ClientInterface::class, $s3);
 
-                    return new S3MultipartUploader($s3);
+                    $bucket = (string) ($diskCfg['bucket'] ?? $diskName);
+                    return new S3MultipartUploader($s3, $bucket);
                 })(),
 
                 'sftp' => (function () use ($config): SftpChunkedUploader {

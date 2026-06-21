@@ -93,7 +93,7 @@ class RunBackupJob implements ShouldQueue
         ]);
 
         BackupStarting::dispatch($this->context, $backup);
-        $preflightChecker->check($this->context->disk);
+        $preflightChecker->check();
 
         $extension = $encryption->name() !== 'none' ? 'sql.gz.enc' : 'sql.gz';
         $path      = $pathBuilder->build($this->context, $startedAt, $extension);

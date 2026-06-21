@@ -23,6 +23,26 @@ final class LocalDiskUploader implements UploadDriver
         return $this->root !== '' ? rtrim($this->root, '/') . '/' . $path : $path;
     }
 
+    public function preflight(): void
+    {
+        $testPath = $this->resolvePath('.stream-backup-preflight-' . \Illuminate\Support\Str::random(16));
+        $dir = dirname($testPath);
+
+        try {
+            if (! is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+
+            if (file_put_contents($testPath, 'pre-flight check') === false) {
+                throw new \RuntimeException('file_put_contents() returned false.');
+            }
+
+            @unlink($testPath);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Pre-flight check failed for local path '{$this->root}'. The path may be unreachable, read-only, or lack delete permissions.", 0, $e);
+        }
+    }
+
     public function initiate(BackupMetadata $metadata): WriteSession
     {
         $fullPath = $this->resolvePath($metadata->path);

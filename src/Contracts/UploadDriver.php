@@ -11,6 +11,16 @@ use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
 interface UploadDriver
 {
     /**
+     * Lightweight pre-flight check: verify the destination is reachable and
+     * writable. Each driver performs a write+delete of a tiny test file using
+     * its own transport (S3, SFTP, local FS) so the check uses the exact same
+     * path as the real upload — no Laravel Storage facade involved.
+     *
+     * @throws \RuntimeException when the destination is unreachable or read-only
+     */
+    public function preflight(): void;
+
+    /**
      * Open/initiate the upload. Returns a session subclass specific to this driver.
      * The pipeline only holds it as WriteSession — it never inspects internals.
      */

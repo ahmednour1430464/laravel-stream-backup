@@ -50,6 +50,21 @@ final class SftpChunkedUploader implements UploadDriver
         }
     }
 
+    public function preflight(): void
+    {
+        $testPath = $this->resolvePath('.stream-backup-preflight-' . \Illuminate\Support\Str::random(16));
+
+        try {
+            if (! $this->sftp->put($testPath, 'pre-flight check')) {
+                throw new \RuntimeException('put() returned false.');
+            }
+
+            $this->sftp->delete($testPath);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Pre-flight check failed for SFTP root '{$this->root}'. The path may be unreachable, read-only, or lack delete permissions.", 0, $e);
+        }
+    }
+
     public function initiate(BackupMetadata $metadata): WriteSession
     {
         $remotePath = $this->resolvePath($metadata->path);

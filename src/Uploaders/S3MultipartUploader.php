@@ -12,9 +12,34 @@ use Ahmednour\StreamBackup\Uploaders\Sessions\S3MultipartSession;
 use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
 use Aws\S3\S3ClientInterface;
 
+use Illuminate\Support\Str;
+
 final class S3MultipartUploader implements UploadDriver
 {
-    public function __construct(private readonly S3ClientInterface $s3) {}
+    public function __construct(
+        private readonly S3ClientInterface $s3,
+        private readonly string $bucket = '',
+    ) {}
+
+    public function preflight(): void
+    {
+        $testKey = '.stream-backup-preflight-' . Str::random(16);
+
+        try {
+            $this->s3->putObject([
+                'Bucket' => $this->bucket,
+                'Key'    => $testKey,
+                'Body'   => 'pre-flight check',
+            ]);
+
+            $this->s3->deleteObject([
+                'Bucket' => $this->bucket,
+                'Key'    => $testKey,
+            ]);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Pre-flight check failed for S3 bucket '{$this->bucket}'. The bucket may be unreachable, read-only, or lack delete permissions.", 0, $e);
+        }
+    }
 
     public function initiate(BackupMetadata $metadata): WriteSession
     {
