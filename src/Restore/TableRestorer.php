@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Log;
 final class TableRestorer
 {
     private readonly DefinerStripper $definerStripper;
+    private readonly StatementFilter $statementFilter;
     private readonly bool $stripDefiners;
     private readonly bool $skipOnError;
 
@@ -38,6 +39,7 @@ final class TableRestorer
     public function __construct(Config $config)
     {
         $this->definerStripper = new DefinerStripper();
+        $this->statementFilter = new StatementFilter();
         $this->stripDefiners   = (bool) $config->get('stream-backup.restore.strip_definers', true);
         $this->skipOnError     = (bool) $config->get('stream-backup.restore.skip_on_error', true);
         $this->skippableCodes  = array_map('intval', (array) $config->get('stream-backup.restore.skippable_error_codes', [1227]));
@@ -191,7 +193,7 @@ final class TableRestorer
      */
     private function executeStatement(ConnectionInterface $db, string $statement, string $tableName): int
     {
-        if ($this->shouldSkip($statement)) {
+        if ($this->statementFilter->shouldSkip($statement)) {
             return 0;
         }
 
@@ -236,31 +238,5 @@ final class TableRestorer
 
             throw $e;
         }
-    }
-
-    /**
-     * Determine whether a statement should be skipped during restore.
-     *
-     * mysqldump emits LOCK TABLES / UNLOCK TABLES around each table block.
-     * Executing these during a programmatic restore is harmful:
-     *
-     *   - LOCK TABLES implicitly commits the active transaction (MySQL
-     *     limitation), breaking the atomicity guarantee.
-     *   - The connection becomes locked: NO table outside the lock list —
-     *     including our own `restores` tracking table — can be accessed
-     *     until UNLOCK TABLES runs, which may never happen if the restore
-     *     fails mid-table.
-     *   - They are completely unnecessary: the restore already runs inside
-     *     a transaction with FK checks disabled.
-     */
-    private function shouldSkip(string $statement): bool
-    {
-        $upper = strtoupper(ltrim($statement));
-
-        if (str_starts_with($upper, 'LOCK TABLES') || str_starts_with($upper, 'UNLOCK TABLES')) {
-            return true;
-        }
-
-        return false;
     }
 }
