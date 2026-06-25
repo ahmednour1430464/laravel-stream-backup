@@ -115,7 +115,11 @@ class RunRestoreJob implements ShouldQueue
             ]);
 
             event(new RestoreSuccessful($this->context, $this->restoreRecord, $result));
-            Log::info("[Restore] Successfully completed. Restored " . count($result->tablesRestored) . " tables.");
+            Log::info(sprintf(
+                '[Restore] Successfully completed. Restored %d tables%s.',
+                count($result->tablesRestored),
+                $result->skippedStatements > 0 ? " ({$result->skippedStatements} statement(s) skipped)" : ''
+            ));
         } catch (\Throwable $e) {
             $this->handleFailure($e);
             throw $e;

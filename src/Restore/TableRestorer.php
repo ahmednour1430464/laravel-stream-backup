@@ -6,6 +6,7 @@ namespace Ahmednour\StreamBackup\Restore;
 
 use Ahmednour\StreamBackup\DTOs\RestoreResult;
 use Ahmednour\StreamBackup\Exceptions\RestoreFailedException;
+use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +26,23 @@ use Illuminate\Support\Facades\Log;
  */
 final class TableRestorer
 {
+    private readonly DefinerStripper $definerStripper;
+    private readonly bool $stripDefiners;
+    private readonly bool $skipOnError;
+
+    /** @var array<int, int> */
+    private readonly array $skippableCodes;
+
+    private int $skippedCount = 0;
+
+    public function __construct(Config $config)
+    {
+        $this->definerStripper = new DefinerStripper();
+        $this->stripDefiners   = (bool) $config->get('stream-backup.restore.strip_definers', true);
+        $this->skipOnError     = (bool) $config->get('stream-backup.restore.skip_on_error', true);
+        $this->skippableCodes  = array_map('intval', (array) $config->get('stream-backup.restore.skippable_error_codes', [1227]));
+    }
+
     /**
      * Restore the given table blocks into the target database.
      *
@@ -40,6 +58,7 @@ final class TableRestorer
         $totalRows      = 0;
         $tablesRestored = [];
         $currentTable   = null;
+        $this->skippedCount = 0;
 
         try {
             $db->unprepared('SET FOREIGN_KEY_CHECKS = 0');
@@ -101,10 +120,15 @@ final class TableRestorer
 
         $duration = microtime(true) - $startTime;
 
+        if ($this->skippedCount > 0) {
+            Log::warning("[Restore] Completed with {$this->skippedCount} skipped statement(s) due to skippable errors.");
+        }
+
         return new RestoreResult(
-            tablesRestored:   $tablesRestored,
+            tablesRestored:    $tablesRestored,
             totalRowsAffected: $totalRows,
-            durationSeconds:  $duration,
+            durationSeconds:   $duration,
+            skippedStatements: $this->skippedCount,
         );
     }
 
@@ -140,8 +164,7 @@ final class TableRestorer
                 $cleanStatement = trim($statement);
 
                 if ($cleanStatement !== '' && $cleanStatement !== ';') {
-                    $affected   = $db->unprepared($cleanStatement);
-                    $totalRows += (int) $affected;
+                    $totalRows += $this->executeStatement($db, $cleanStatement, $tableName);
                 }
 
                 $statement = '';
@@ -151,10 +174,44 @@ final class TableRestorer
         // Execute any remaining partial statement.
         $remaining = trim($statement);
         if ($remaining !== '' && $remaining !== ';') {
-            $affected   = $db->unprepared($remaining);
-            $totalRows += (int) $affected;
+            $totalRows += $this->executeStatement($db, $remaining, $tableName);
         }
 
         return $totalRows;
+    }
+
+    /**
+     * Execute a single SQL statement, applying DEFINER stripping and the
+     * configurable skip-on-error safety net.
+     *
+     * @param ConnectionInterface $db
+     * @param string              $statement
+     * @param string              $tableName
+     * @return int Rows affected
+     */
+    private function executeStatement(ConnectionInterface $db, string $statement, string $tableName): int
+    {
+        if ($this->stripDefiners) {
+            $statement = $this->definerStripper->stripDefiner($statement);
+        }
+
+        try {
+            return (int) $db->unprepared($statement);
+        } catch (\Throwable $e) {
+            $code = MySqlErrorExtractor::code($e);
+
+            if ($this->skipOnError && $code !== null && in_array($code, $this->skippableCodes, true)) {
+                Log::warning(
+                    "[Restore] Skipped statement in `{$tableName}` due to skippable MySQL error (code {$code}): {$e->getMessage()}",
+                    ['statement' => mb_substr($statement, 0, 500)]
+                );
+
+                $this->skippedCount++;
+
+                return 0;
+            }
+
+            throw $e;
+        }
     }
 }
