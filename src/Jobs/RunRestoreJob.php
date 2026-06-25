@@ -108,6 +108,19 @@ class RunRestoreJob implements ShouldQueue
             });
             Log::debug("[Restore] RestorePipeline completed.", ['result' => (array) $result]);
 
+            // The restore target connection may have accumulated session
+            // state (implicit DDL commits, FK check toggles, mysqldump
+            // session variables) during the long restore. The Restore
+            // model often shares the same PDO connection when the target
+            // is the default connection, so disconnect to obtain a fresh,
+            // clean connection for the final status update — same safety
+            // measure used in handleFailure().
+            try {
+                DB::disconnect($this->context->connectionName);
+            } catch (\Throwable) {
+                // Best effort — the connection might already be broken.
+            }
+
             $this->restoreRecord->markAs(RestoreStatus::Completed, [
                 'tables_restored' => $result->tablesRestored,
                 'rows_affected'   => $result->totalRowsAffected,

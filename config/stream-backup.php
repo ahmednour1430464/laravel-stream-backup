@@ -266,6 +266,17 @@ return [
         'strip_definers'        => env('STREAM_BACKUP_RESTORE_STRIP_DEFINERS', true),
         'skip_on_error'         => env('STREAM_BACKUP_RESTORE_SKIP_ON_ERROR', true),
         'skippable_error_codes' => [1227],
+
+        // Tables excluded from restore to prevent the process from
+        // destroying its own tracking records. A full restore replays
+        // mysqldump's DROP + CREATE + INSERT for every table; when the
+        // target database is the same one that hosts the backups/restores
+        // tables, this wipes the current restore record (so the final
+        // markAs(Completed) UPDATE silently affects 0 rows) and replaces
+        // the backups table with stale data from the dump.
+        // Set to [] to disable exclusion (e.g. when restoring into a
+        // separate database where these tables don't matter).
+        'exclude_tables'        => ['backups', 'restores'],
     ],
 
 ];
