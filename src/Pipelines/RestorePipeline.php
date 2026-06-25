@@ -118,6 +118,15 @@ final class RestorePipeline
                 fclose($sqlStream);
             }
 
+            // Exclude the package's own tracking tables to prevent the
+            // restore from destroying its own restore record. A full restore
+            // replays DROP + CREATE + INSERT for every table; when the
+            // target database hosts the backups/restores tables, this wipes
+            // the current restore record (so the final status UPDATE
+            // silently affects 0 rows) and replaces the backups table with
+            // stale data from the dump.
+            $tableBlocks = $this->excludeTables($tableBlocks);
+
             // 7. Restore the tables inside a transaction.
             if ($onProgress) {
                 $onProgress(RestoreStatus::Importing);
@@ -131,6 +140,44 @@ final class RestorePipeline
             $this->killProcess($decompProc);
             throw $e instanceof PipelineException ? $e : new PipelineException($e->getMessage(), 0, $e);
         }
+    }
+
+    /**
+     * Remove excluded tables from the parsed table blocks.
+     *
+     * The package's own tracking tables (backups, restores) must never be
+     * restored into the target database: doing so would DROP and recreate
+     * them with stale dump data, silently wiping the current restore
+     * record and replacing backup metadata with old data.
+     *
+     * @param  array<string, resource> $tableBlocks
+     * @return array<string, resource>
+     */
+    private function excludeTables(array $tableBlocks): array
+    {
+        $excludeTables = array_map('strtolower', (array) $this->config->get(
+            'stream-backup.restore.exclude_tables',
+            ['backups', 'restores'],
+        ));
+
+        if ($excludeTables === []) {
+            return $tableBlocks;
+        }
+
+        foreach ($tableBlocks as $tableName => $buffer) {
+            if (! in_array(strtolower($tableName), $excludeTables, true)) {
+                continue;
+            }
+
+            if (is_resource($buffer)) {
+                @fclose($buffer);
+            }
+
+            unset($tableBlocks[$tableName]);
+            Log::info("[RestorePipeline] Excluded table `{$tableName}` from restore (package tracking table).");
+        }
+
+        return $tableBlocks;
     }
 
     /**

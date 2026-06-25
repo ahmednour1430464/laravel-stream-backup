@@ -20,6 +20,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class RunRestoreJob implements ShouldQueue
@@ -107,6 +108,19 @@ class RunRestoreJob implements ShouldQueue
             });
             Log::debug("[Restore] RestorePipeline completed.", ['result' => (array) $result]);
 
+            // The restore target connection may have accumulated session
+            // state (implicit DDL commits, FK check toggles, mysqldump
+            // session variables) during the long restore. The Restore
+            // model often shares the same PDO connection when the target
+            // is the default connection, so disconnect to obtain a fresh,
+            // clean connection for the final status update — same safety
+            // measure used in handleFailure().
+            try {
+                DB::disconnect($this->context->connectionName);
+            } catch (\Throwable) {
+                // Best effort — the connection might already be broken.
+            }
+
             $this->restoreRecord->markAs(RestoreStatus::Completed, [
                 'tables_restored' => $result->tablesRestored,
                 'rows_affected'   => $result->totalRowsAffected,
@@ -115,7 +129,11 @@ class RunRestoreJob implements ShouldQueue
             ]);
 
             event(new RestoreSuccessful($this->context, $this->restoreRecord, $result));
-            Log::info("[Restore] Successfully completed. Restored " . count($result->tablesRestored) . " tables.");
+            Log::info(sprintf(
+                '[Restore] Successfully completed. Restored %d tables%s.',
+                count($result->tablesRestored),
+                $result->skippedStatements > 0 ? " ({$result->skippedStatements} statement(s) skipped)" : ''
+            ));
         } catch (\Throwable $e) {
             $this->handleFailure($e);
             throw $e;
@@ -138,10 +156,27 @@ class RunRestoreJob implements ShouldQueue
                 $status = RestoreStatus::Failed;
             }
 
-            $this->restoreRecord->markAs($status, [
-                'finished_at'   => now(),
-                'error_message' => mb_substr($e->getMessage(), 0, 65535),
-            ]);
+            // The restore target connection may be in a locked or broken
+            // state (e.g. mysqldump's LOCK TABLES, implicit DDL commits, or
+            // a failed transaction that left the PDO connection unusable).
+            // Disconnect it so the Restore model — which often shares the
+            // same PDO connection — obtains a fresh, clean connection for
+            // the status update.
+            try {
+                DB::disconnect($this->context->connectionName);
+            } catch (\Throwable) {
+                // Best effort — the connection might already be broken.
+            }
+
+            try {
+                $this->restoreRecord->markAs($status, [
+                    'finished_at'   => now(),
+                    'error_message' => mb_substr($e->getMessage(), 0, 65535),
+                ]);
+            } catch (\Throwable $updateException) {
+                // Never let a status-update failure mask the original error.
+                Log::error('[Restore] Failed to update restore record: ' . $updateException->getMessage());
+            }
         }
 
         event(new RestoreFailed($this->context, $e));
@@ -160,10 +195,20 @@ class RunRestoreJob implements ShouldQueue
             $this->receivedSigterm = true;
 
             if ($this->restoreRecord !== null && ! $this->restoreRecord->status->isTerminal()) {
-                $this->restoreRecord->markAs(RestoreStatus::Aborted, [
-                    'finished_at'   => now(),
-                    'error_message' => 'Aborted via SIGTERM',
-                ]);
+                try {
+                    DB::disconnect($this->context->connectionName);
+                } catch (\Throwable) {
+                    // Best effort.
+                }
+
+                try {
+                    $this->restoreRecord->markAs(RestoreStatus::Aborted, [
+                        'finished_at'   => now(),
+                        'error_message' => 'Aborted via SIGTERM',
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::error('[Restore] Failed to mark as aborted: ' . $e->getMessage());
+                }
             }
 
             exit(128 + SIGTERM);

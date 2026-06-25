@@ -238,4 +238,45 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Restore
+    |--------------------------------------------------------------------------
+    |
+    | Behaviour controls for the streaming restore executor.
+    |
+    | strip_definers: mysqldump embeds DEFINER=`user`@`host` clauses in every
+    |   view, procedure, function, trigger and event. Restoring these under a
+    |   MySQL user that lacks SUPER / SET_USER_ID (common on managed cloud
+    |   MySQL such as RDS, DigitalOcean, shared hosting) fails with error 1227.
+    |   When true, DEFINER= clauses are stripped from DDL statements before
+    |   execution so the object is created with the restore user as definer.
+    |
+    | skip_on_error: when true, a statement that fails with one of the
+    |   skippable_error_codes is logged as a warning and the restore continues
+    |   instead of aborting the whole (potentially long) run.
+    |
+    | skippable_error_codes: MySQL driver-specific error codes (not the
+    |   SQLSTATE) considered safe to skip. 1227 = access denied for
+    |   DEFINER/SUPER. Keep this list to privilege/DDL codes only — adding DML
+    |   error codes here can silently lose data.
+    |
+    */
+    'restore' => [
+        'strip_definers'        => env('STREAM_BACKUP_RESTORE_STRIP_DEFINERS', true),
+        'skip_on_error'         => env('STREAM_BACKUP_RESTORE_SKIP_ON_ERROR', true),
+        'skippable_error_codes' => [1227],
+
+        // Tables excluded from restore to prevent the process from
+        // destroying its own tracking records. A full restore replays
+        // mysqldump's DROP + CREATE + INSERT for every table; when the
+        // target database is the same one that hosts the backups/restores
+        // tables, this wipes the current restore record (so the final
+        // markAs(Completed) UPDATE silently affects 0 rows) and replaces
+        // the backups table with stale data from the dump.
+        // Set to [] to disable exclusion (e.g. when restoring into a
+        // separate database where these tables don't matter).
+        'exclude_tables'        => ['backups', 'restores'],
+    ],
+
 ];
