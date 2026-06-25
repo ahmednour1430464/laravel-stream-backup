@@ -10,6 +10,7 @@ use Ahmednour\StreamBackup\DTOs\UploadResult;
 use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Uploaders\Sessions\LocalWriteSession;
 use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
+use Illuminate\Support\Str;
 
 final class LocalDiskUploader implements UploadDriver
 {
@@ -20,12 +21,13 @@ final class LocalDiskUploader implements UploadDriver
     private function resolvePath(string $path): string
     {
         $path = ltrim($path, '/');
-        return $this->root !== '' ? rtrim($this->root, '/') . '/' . $path : $path;
+
+        return $this->root !== '' ? rtrim($this->root, '/').'/'.$path : $path;
     }
 
     public function preflight(): void
     {
-        $testPath = $this->resolvePath('.stream-backup-preflight-' . \Illuminate\Support\Str::random(16));
+        $testPath = $this->resolvePath('.stream-backup-preflight-'.Str::random(16));
         $dir = dirname($testPath);
 
         try {
@@ -74,6 +76,7 @@ final class LocalDiskUploader implements UploadDriver
     {
         assert($session instanceof LocalWriteSession);
         fclose($session->handle);
+
         return $this->buildResult($session);
     }
 
@@ -89,12 +92,12 @@ final class LocalDiskUploader implements UploadDriver
         $duration = max(0.0, microtime(true) - $session->metadata->startedAt->getTimestamp());
 
         return new UploadResult(
-            bucket:          '',
-            key:             $session->localPath,
-            sizeBytes:       $session->totalBytes(),
-            partCount:       $session->partCount(),
+            bucket: '',
+            key: $session->localPath,
+            sizeBytes: $session->totalBytes(),
+            partCount: $session->partCount(),
             durationSeconds: $duration,
-            checksum:        '',
+            checksum: '',
         );
     }
 }

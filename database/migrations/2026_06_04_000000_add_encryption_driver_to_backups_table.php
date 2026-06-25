@@ -14,7 +14,8 @@ use Illuminate\Support\Facades\Schema;
  * name (e.g. 'openssl-aes-256-gcm', 'sodium') so a future restore
  * command knows which cipher to use for decryption.
  */
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         Schema::table('backups', function (Blueprint $table): void {

@@ -26,7 +26,8 @@ use Ahmednour\StreamBackup\Exceptions\InvalidBackupException;
  */
 final class SodiumDecryptionStream implements BackupStream
 {
-    private const VERSION    = "\x02";
+    private const VERSION = "\x02";
+
     private const HEADER_LEN = 24; // SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES
 
     /**
@@ -42,14 +43,15 @@ final class SodiumDecryptionStream implements BackupStream
     private string $pending = '';
 
     private bool $headerRead = false;
-    private bool $eof        = false;
-    private bool $closed     = false;
+
+    private bool $eof = false;
+
+    private bool $closed = false;
 
     public function __construct(
         private readonly BackupStream $inner,
         private string $key,
-    ) {
-    }
+    ) {}
 
     public function read(int $length = 65536): ?string
     {
@@ -59,8 +61,9 @@ final class SodiumDecryptionStream implements BackupStream
 
         // Return any buffered plaintext first.
         if ($this->pending !== '') {
-            $out           = substr($this->pending, 0, $length);
+            $out = substr($this->pending, 0, $length);
             $this->pending = substr($this->pending, strlen($out));
+
             return $out;
         }
 
@@ -80,7 +83,7 @@ final class SodiumDecryptionStream implements BackupStream
             }
 
             $streamHeader = substr($header, 1, self::HEADER_LEN);
-            $this->state  = sodium_crypto_secretstream_xchacha20poly1305_init_pull($streamHeader, $this->key);
+            $this->state = sodium_crypto_secretstream_xchacha20poly1305_init_pull($streamHeader, $this->key);
             $this->headerRead = true;
         }
 
@@ -91,12 +94,13 @@ final class SodiumDecryptionStream implements BackupStream
             return '';  // not enough data yet
         }
 
-        /** @var array{N: int} $unpacked */
-        $unpacked      = unpack('N', $lenBytes);
-        $ciphertextLen = $unpacked['N'] ?? $unpacked[1];
+        /** @var array{1: int} $unpacked */
+        $unpacked = unpack('N', $lenBytes);
+        $ciphertextLen = $unpacked[1];
 
         if ($ciphertextLen === 0) {
             $this->eof = true;
+
             return null;
         }
 
@@ -111,7 +115,7 @@ final class SodiumDecryptionStream implements BackupStream
         if ($result === false) {
             throw new InvalidBackupException(
                 'Sodium decryption failed: authentication error. '
-                . 'The backup may be corrupt or the key is wrong.'
+                .'The backup may be corrupt or the key is wrong.'
             );
         }
 
@@ -129,6 +133,7 @@ final class SodiumDecryptionStream implements BackupStream
         // Buffer any excess beyond $length.
         if (strlen($plaintext) > $length) {
             $this->pending = substr($plaintext, $length);
+
             return substr($plaintext, 0, $length);
         }
 
@@ -148,7 +153,9 @@ final class SodiumDecryptionStream implements BackupStream
         $this->closed = true;
 
         // Wipe the key from PHP memory first — before any potential exception.
-        sodium_memzero($this->key);
+        $key = $this->key;
+        $this->key = str_repeat("\x00", strlen($key));
+        sodium_memzero($key);
 
         $this->inner->close();
     }
@@ -170,6 +177,7 @@ final class SodiumDecryptionStream implements BackupStream
                     );
                 }
                 $this->eof = true;
+
                 return null;
             }
 
@@ -180,8 +188,9 @@ final class SodiumDecryptionStream implements BackupStream
             $this->readBuffer .= $chunk;
         }
 
-        $result           = substr($this->readBuffer, 0, $needed);
+        $result = substr($this->readBuffer, 0, $needed);
         $this->readBuffer = substr($this->readBuffer, $needed);
+
         return $result;
     }
 }

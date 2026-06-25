@@ -14,7 +14,7 @@ final class StatementFilterTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->filter = new StatementFilter();
+        $this->filter = new StatementFilter;
     }
 
     public function test_skips_lock_tables(): void

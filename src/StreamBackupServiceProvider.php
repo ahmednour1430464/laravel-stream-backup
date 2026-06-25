@@ -11,11 +11,6 @@ use Ahmednour\StreamBackup\Commands\RestoreBackupCommand;
 use Ahmednour\StreamBackup\Compression\AutoCompressionDriver;
 use Ahmednour\StreamBackup\Compression\GzipDriver;
 use Ahmednour\StreamBackup\Compression\PigzDriver;
-use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
-use Ahmednour\StreamBackup\Encryption\NullEncryptionDriver;
-use Ahmednour\StreamBackup\Encryption\OpenSslAes256GcmDriver;
-use Ahmednour\StreamBackup\Encryption\SodiumDriver;
-use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
 use Ahmednour\StreamBackup\Contracts\CompressionDriver;
 use Ahmednour\StreamBackup\Contracts\DatabaseDumper;
 use Ahmednour\StreamBackup\Contracts\DownloadDriver;
@@ -25,20 +20,18 @@ use Ahmednour\StreamBackup\Downloaders\LocalDownloadDriver;
 use Ahmednour\StreamBackup\Downloaders\S3DownloadDriver;
 use Ahmednour\StreamBackup\Downloaders\SftpDownloadDriver;
 use Ahmednour\StreamBackup\Dumpers\DumperFactory;
+use Ahmednour\StreamBackup\Encryption\EncryptionFactory;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
 use Ahmednour\StreamBackup\Jobs\AbortStaleMultipartUploads;
 use Ahmednour\StreamBackup\Jobs\BackupCleanupJob;
-use Ahmednour\StreamBackup\Pipelines\RestorePipeline;
 use Ahmednour\StreamBackup\Pipelines\StreamPipeline;
 use Ahmednour\StreamBackup\Resolvers\ConfigTenantResolver;
 use Ahmednour\StreamBackup\Resolvers\SingleDatabaseResolver;
-use Ahmednour\StreamBackup\Restore\SqlDumpParser;
-use Ahmednour\StreamBackup\Restore\TableRestorer;
 use Ahmednour\StreamBackup\Support\BackupPathBuilder;
 use Ahmednour\StreamBackup\Support\BackupSemaphore;
 use Ahmednour\StreamBackup\Support\BackupVerifier;
 use Ahmednour\StreamBackup\Support\BinaryLocator;
-use Ahmednour\StreamBackup\Support\MySQLCredentialFile;
+use Ahmednour\StreamBackup\Support\EncryptionKeyResolver;
 use Ahmednour\StreamBackup\Support\RetentionClassifier;
 use Ahmednour\StreamBackup\Uploaders\LocalDiskUploader;
 use Ahmednour\StreamBackup\Uploaders\S3MultipartUploader;
@@ -50,19 +43,25 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Support\ServiceProvider;
+use phpseclib3\Crypt\Common\PrivateKey;
+use phpseclib3\Crypt\PublicKeyLoader;
+use phpseclib3\Net\SFTP;
+use Psr\Log\LoggerInterface;
 
 class StreamBackupServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__ . '/../config/stream-backup.php', 'stream-backup');
+        $this->mergeConfigFrom(__DIR__.'/../config/stream-backup.php', 'stream-backup');
 
         $this->app->singleton(BinaryLocator::class, function ($app) {
+            $config = $app->make(Config::class);
+            $drivers = (array) $config->get('stream-backup.dump.drivers', []);
 
             return new BinaryLocator([
-                'mysqldump' => (string) ($drivers['mysql']['binary']  ?? 'mysqldump'),
-                'pg_dump'   => (string) ($drivers['pgsql']['binary']  ?? 'pg_dump'),
-                'sqlite3'   => (string) ($drivers['sqlite']['binary'] ?? 'sqlite3'),
+                'mysqldump' => (string) ($drivers['mysql']['binary'] ?? 'mysqldump'),
+                'pg_dump' => (string) ($drivers['pgsql']['binary'] ?? 'pg_dump'),
+                'sqlite3' => (string) ($drivers['sqlite']['binary'] ?? 'sqlite3'),
             ]);
         });
 
@@ -71,29 +70,30 @@ class StreamBackupServiceProvider extends ServiceProvider
 
         $this->app->singleton(BackupSemaphore::class, function ($app) {
             $config = $app->make(Config::class);
+
             return new BackupSemaphore(
-                cache:          $app->make(CacheRepository::class),
-                maxConcurrent:  (int) $config->get('stream-backup.queue.max_concurrent', 2),
-                lockTtl:        (int) $config->get('stream-backup.queue.slot_ttl', 21600),
+                cache: $app->make(CacheRepository::class),
+                maxConcurrent: (int) $config->get('stream-backup.queue.max_concurrent', 2),
+                lockTtl: (int) $config->get('stream-backup.queue.slot_ttl', 21600),
             );
         });
 
         // S3 client. The checksum options are mandatory for DigitalOcean
         // Spaces compatibility (see S3MultipartUploader docblock).
         $this->app->singleton(S3ClientInterface::class, function ($app) {
-            $config    = $app->make(Config::class);
-            $diskName  = (string) $config->get('stream-backup.default_disk', 'spaces');
-            $diskCfg   = (array) $config->get("filesystems.disks.{$diskName}", []);
+            $config = $app->make(Config::class);
+            $diskName = (string) $config->get('stream-backup.default_disk', 'spaces');
+            $diskCfg = (array) $config->get("filesystems.disks.{$diskName}", []);
 
             return new S3Client([
-                'version'                      => 'latest',
-                'region'                       => $diskCfg['region']   ?? 'us-east-1',
-                'endpoint'                     => $diskCfg['endpoint'] ?? null,
-                'credentials'                  => [
-                    'key'    => $diskCfg['key']    ?? '',
+                'version' => 'latest',
+                'region' => $diskCfg['region'] ?? 'us-east-1',
+                'endpoint' => $diskCfg['endpoint'] ?? null,
+                'credentials' => [
+                    'key' => $diskCfg['key'] ?? '',
                     'secret' => $diskCfg['secret'] ?? '',
                 ],
-                'use_path_style_endpoint'      => (bool) ($diskCfg['use_path_style_endpoint'] ?? false),
+                'use_path_style_endpoint' => (bool) ($diskCfg['use_path_style_endpoint'] ?? false),
                 'request_checksum_calculation' => 'when_required',
                 'response_checksum_validation' => 'when_required',
             ]);
@@ -105,11 +105,11 @@ class StreamBackupServiceProvider extends ServiceProvider
         $this->app->bind(CompressionDriver::class, function ($app) {
             $config = $app->make(Config::class);
             $driver = (string) $config->get('stream-backup.compression.driver', 'auto');
-            $level  = (int) $config->get('stream-backup.compression.level', 4);
+            $level = (int) $config->get('stream-backup.compression.level', 4);
             $locator = $app->make(BinaryLocator::class);
 
             return match ($driver) {
-                'auto' => new AutoCompressionDriver($locator, $level, $app->make(\Psr\Log\LoggerInterface::class)),
+                'auto' => new AutoCompressionDriver($locator, $level, $app->make(LoggerInterface::class)),
                 'pigz' => new PigzDriver($locator, $level),
                 'gzip' => new GzipDriver($locator, $level),
                 default => throw new InvalidConfigException("Unknown compression driver '{$driver}'."),
@@ -147,17 +147,17 @@ class StreamBackupServiceProvider extends ServiceProvider
 
                 's3' => (function () use ($app, $config): S3MultipartUploader {
                     $diskName = (string) $config->get('stream-backup.default_disk', 'spaces');
-                    $diskCfg  = (array)  $config->get("filesystems.disks.{$diskName}", []);
+                    $diskCfg = (array) $config->get("filesystems.disks.{$diskName}", []);
 
                     $s3 = new S3Client([
-                        'version'                      => 'latest',
-                        'region'                       => $diskCfg['region']   ?? 'us-east-1',
-                        'endpoint'                     => $diskCfg['endpoint'] ?? null,
-                        'credentials'                  => [
-                            'key'    => $diskCfg['key']    ?? '',
+                        'version' => 'latest',
+                        'region' => $diskCfg['region'] ?? 'us-east-1',
+                        'endpoint' => $diskCfg['endpoint'] ?? null,
+                        'credentials' => [
+                            'key' => $diskCfg['key'] ?? '',
                             'secret' => $diskCfg['secret'] ?? '',
                         ],
-                        'use_path_style_endpoint'      => (bool) ($diskCfg['use_path_style_endpoint'] ?? false),
+                        'use_path_style_endpoint' => (bool) ($diskCfg['use_path_style_endpoint'] ?? false),
                         'request_checksum_calculation' => 'when_required',  // mandatory for Spaces
                         'response_checksum_validation' => 'when_required',
                     ]);
@@ -167,19 +167,20 @@ class StreamBackupServiceProvider extends ServiceProvider
                     $app->instance(S3ClientInterface::class, $s3);
 
                     $bucket = (string) ($diskCfg['bucket'] ?? $diskName);
+
                     return new S3MultipartUploader($s3, $bucket);
                 })(),
 
                 'sftp' => (function () use ($config): SftpChunkedUploader {
-                    if (! class_exists(\phpseclib3\Net\SFTP::class)) {
+                    if (! class_exists(SFTP::class)) {
                         throw new InvalidConfigException(
-                            "stream-backup: SFTP driver requires phpseclib/phpseclib. "
-                            . 'Please run `composer require phpseclib/phpseclib`.'
+                            'stream-backup: SFTP driver requires phpseclib/phpseclib. '
+                            .'Please run `composer require phpseclib/phpseclib`.'
                         );
                     }
 
-                    $cfg  = (array) $config->get('stream-backup.destination', []);
-                    $sftp = new \phpseclib3\Net\SFTP(
+                    $cfg = (array) $config->get('stream-backup.destination', []);
+                    $sftp = new SFTP(
                         $cfg['host'],
                         (int) ($cfg['port'] ?? 22)
                     );
@@ -187,17 +188,23 @@ class StreamBackupServiceProvider extends ServiceProvider
                     $authed = isset($cfg['private_key'])
                         ? $sftp->login(
                             $cfg['username'],
-                            \phpseclib3\Crypt\PublicKeyLoader::load(
-                                file_get_contents($cfg['private_key']),
-                                $cfg['passphrase'] ?? false
-                            )
+                            (function () use ($cfg) {
+                                $contents = file_get_contents($cfg['private_key']);
+                                if ($contents === false) {
+                                    throw new InvalidConfigException("Cannot read private key file: {$cfg['private_key']}");
+                                }
+                                $key = PublicKeyLoader::load($contents, $cfg['passphrase'] ?? false);
+                                assert($key instanceof PrivateKey);
+
+                                return $key;
+                            })()
                         )
                         : $sftp->login($cfg['username'], $cfg['password'] ?? '');
 
                     if (! $authed) {
                         throw new InvalidConfigException(
                             "stream-backup: SFTP authentication failed for host [{$cfg['host']}]. "
-                            . 'Check destination.username and destination.password / private_key.'
+                            .'Check destination.username and destination.password / private_key.'
                         );
                     }
 
@@ -211,13 +218,14 @@ class StreamBackupServiceProvider extends ServiceProvider
 
                 'local' => (function () use ($config): LocalDiskUploader {
                     $diskName = (string) $config->get('stream-backup.default_disk', 'local');
-                    $root     = (string) $config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+                    $root = (string) $config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+
                     return new LocalDiskUploader($root);
                 })(),
 
                 default => throw new InvalidConfigException(
                     "stream-backup: unknown destination driver [{$driver}]. "
-                    . 'Supported drivers: s3, sftp, local.'
+                    .'Supported drivers: s3, sftp, local.'
                 ),
             };
         });
@@ -230,23 +238,23 @@ class StreamBackupServiceProvider extends ServiceProvider
             return match ($driver) {
 
                 's3' => (function () use ($app, $config): S3DownloadDriver {
-                    $s3     = $app->make(S3ClientInterface::class);
+                    $s3 = $app->make(S3ClientInterface::class);
                     $diskName = (string) $config->get('stream-backup.default_disk', 'spaces');
-                    $bucket   = (string) $config->get("filesystems.disks.{$diskName}.bucket", $diskName);
+                    $bucket = (string) $config->get("filesystems.disks.{$diskName}.bucket", $diskName);
 
                     return new S3DownloadDriver($s3, $bucket);
                 })(),
 
                 'sftp' => (function () use ($config): SftpDownloadDriver {
-                    if (! class_exists(\phpseclib3\Net\SFTP::class)) {
+                    if (! class_exists(SFTP::class)) {
                         throw new InvalidConfigException(
-                            "stream-backup: SFTP driver requires phpseclib/phpseclib. "
-                            . 'Please run `composer require phpseclib/phpseclib`.'
+                            'stream-backup: SFTP driver requires phpseclib/phpseclib. '
+                            .'Please run `composer require phpseclib/phpseclib`.'
                         );
                     }
 
-                    $cfg  = (array) $config->get('stream-backup.destination', []);
-                    $sftp = new \phpseclib3\Net\SFTP(
+                    $cfg = (array) $config->get('stream-backup.destination', []);
+                    $sftp = new SFTP(
                         $cfg['host'],
                         (int) ($cfg['port'] ?? 22)
                     );
@@ -254,17 +262,23 @@ class StreamBackupServiceProvider extends ServiceProvider
                     $authed = isset($cfg['private_key'])
                         ? $sftp->login(
                             $cfg['username'],
-                            \phpseclib3\Crypt\PublicKeyLoader::load(
-                                file_get_contents($cfg['private_key']),
-                                $cfg['passphrase'] ?? false
-                            )
+                            (function () use ($cfg) {
+                                $contents = file_get_contents($cfg['private_key']);
+                                if ($contents === false) {
+                                    throw new InvalidConfigException("Cannot read private key file: {$cfg['private_key']}");
+                                }
+                                $key = PublicKeyLoader::load($contents, $cfg['passphrase'] ?? false);
+                                assert($key instanceof PrivateKey);
+
+                                return $key;
+                            })()
                         )
                         : $sftp->login($cfg['username'], $cfg['password'] ?? '');
 
                     if (! $authed) {
                         throw new InvalidConfigException(
                             "stream-backup: SFTP authentication failed for host [{$cfg['host']}]. "
-                            . 'Check destination.username and destination.password / private_key.'
+                            .'Check destination.username and destination.password / private_key.'
                         );
                     }
 
@@ -276,13 +290,14 @@ class StreamBackupServiceProvider extends ServiceProvider
 
                 'local' => (function () use ($config): LocalDownloadDriver {
                     $diskName = (string) $config->get('stream-backup.default_disk', 'local');
-                    $root     = (string) $config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+                    $root = (string) $config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+
                     return new LocalDownloadDriver($root);
                 })(),
 
                 default => throw new InvalidConfigException(
                     "stream-backup: unknown destination driver [{$driver}]. "
-                    . 'Supported drivers: s3, sftp, local.'
+                    .'Supported drivers: s3, sftp, local.'
                 ),
             };
         });
@@ -305,11 +320,11 @@ class StreamBackupServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__ . '/../config/stream-backup.php' => config_path('stream-backup.php'),
-                __DIR__ . '/../database/migrations' => database_path('migrations'),
+                __DIR__.'/../config/stream-backup.php' => config_path('stream-backup.php'),
+                __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'stream-backup');
 
-            $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+            $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
             $this->commands([
                 BackupTenantCommand::class,
@@ -328,8 +343,8 @@ class StreamBackupServiceProvider extends ServiceProvider
 
             $staleHours = max(1, (int) $config->get('stream-backup.schedule.stale_multipart.stale_hours', 6));
             $connection = $config->get('stream-backup.schedule.connection');
-            $queue      = $config->get('stream-backup.schedule.queue');
-            $timezone   = $config->get('stream-backup.schedule.timezone');
+            $queue = $config->get('stream-backup.schedule.queue');
+            $timezone = $config->get('stream-backup.schedule.timezone');
 
             $staleEvent = $schedule->job(
                 new AbortStaleMultipartUploads($staleHours),
@@ -338,7 +353,7 @@ class StreamBackupServiceProvider extends ServiceProvider
             );
             $this->applyFrequency($staleEvent, (array) $config->get('stream-backup.schedule.stale_multipart', []), 'stale_multipart');
 
-            $cleanupEvent = $schedule->job(new BackupCleanupJob(), $queue, $connection);
+            $cleanupEvent = $schedule->job(new BackupCleanupJob, $queue, $connection);
             $this->applyFrequency($cleanupEvent, (array) $config->get('stream-backup.schedule.cleanup', []), 'cleanup');
 
             if (is_string($timezone) && $timezone !== '') {
@@ -355,7 +370,7 @@ class StreamBackupServiceProvider extends ServiceProvider
      * leaking S3 multipart-upload cost for up to 24h).
      */
     private const VALID_FREQUENCIES = [
-        'cleanup'         => ['daily', 'hourly', 'weekly', 'monthly', 'cron'],
+        'cleanup' => ['daily', 'hourly', 'weekly', 'monthly', 'cron'],
         'stale_multipart' => ['hourly', 'everyMinutes', 'cron'],
     ];
 
@@ -366,12 +381,14 @@ class StreamBackupServiceProvider extends ServiceProvider
 
     /**
      * Apply the configured frequency to a scheduled job event.
+     *
+     * @param  array<string, mixed>  $cfg
      */
     private function applyFrequency(Event $event, array $cfg, string $kind): void
     {
-        $default   = $kind === 'cleanup' ? 'daily' : 'hourly';
+        $default = $kind === 'cleanup' ? 'daily' : 'hourly';
         $frequency = (string) ($cfg['frequency'] ?? $default);
-        $allowed   = self::VALID_FREQUENCIES[$kind];
+        $allowed = self::VALID_FREQUENCIES[$kind];
 
         if (! in_array($frequency, $allowed, true)) {
             throw new InvalidConfigException(sprintf(
@@ -383,15 +400,18 @@ class StreamBackupServiceProvider extends ServiceProvider
         }
 
         match ($frequency) {
-            'cron'         => $event->cron($this->requireCron($cfg, $kind)),
-            'hourly'       => $event->hourly(),
-            'daily'        => $event->dailyAt($this->requireTime($cfg, $kind)),
-            'weekly'       => $event->weeklyOn(0, $this->requireTime($cfg, $kind)),
-            'monthly'      => $event->monthlyOn(1, $this->requireTime($cfg, $kind)),
+            'cron' => $event->cron($this->requireCron($cfg, $kind)),
+            'hourly' => $event->hourly(),
+            'daily' => $event->dailyAt($this->requireTime($cfg, $kind)),
+            'weekly' => $event->weeklyOn(0, $this->requireTime($cfg, $kind)),
+            'monthly' => $event->monthlyOn(1, $this->requireTime($cfg, $kind)),
             'everyMinutes' => $event->cron($this->buildEveryMinutesExpr($cfg, $kind)),
         };
     }
 
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
     private function requireCron(array $cfg, string $kind): string
     {
         $cron = (string) ($cfg['cron'] ?? '');
@@ -400,9 +420,13 @@ class StreamBackupServiceProvider extends ServiceProvider
                 "stream-backup.schedule.{$kind}.cron must be set when frequency is 'cron'."
             );
         }
+
         return $cron;
     }
 
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
     private function requireTime(array $cfg, string $kind): string
     {
         $time = (string) ($cfg['time'] ?? '');
@@ -411,18 +435,23 @@ class StreamBackupServiceProvider extends ServiceProvider
                 "stream-backup.schedule.{$kind}.time must be 'HH:MM' (24h); got '{$time}'."
             );
         }
+
         return $time;
     }
 
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
     private function buildEveryMinutesExpr(array $cfg, string $kind): string
     {
         $minutes = (int) ($cfg['minutes'] ?? 0);
         if (! in_array($minutes, self::VALID_EVERY_MINUTES, true)) {
             throw new InvalidConfigException(
                 "stream-backup.schedule.{$kind}.minutes must divide 60 evenly; "
-                . 'use one of [' . implode(', ', self::VALID_EVERY_MINUTES) . '].'
+                .'use one of ['.implode(', ', self::VALID_EVERY_MINUTES).'].'
             );
         }
+
         return "*/{$minutes} * * * *";
     }
 }

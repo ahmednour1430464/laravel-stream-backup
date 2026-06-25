@@ -30,8 +30,7 @@ abstract class AbstractProcessDumper implements DatabaseDumper
     public function __construct(
         protected readonly BinaryLocator $locator,
         protected readonly Config $config,
-    ) {
-    }
+    ) {}
 
     /**
      * Start a database dump process and return a non-blocking stream.
@@ -43,7 +42,7 @@ abstract class AbstractProcessDumper implements DatabaseDumper
     {
         $this->beforeDump($context);
 
-        $command     = $this->buildCommand($context);
+        $command = $this->buildCommand($context);
         $environment = $this->buildEnvironment($context);
 
         $descriptors = [

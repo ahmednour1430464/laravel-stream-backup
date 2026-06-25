@@ -30,12 +30,16 @@ use Ahmednour\StreamBackup\Exceptions\InvalidBackupException;
 final class OpenSslDecryptionStream implements BackupStream
 {
     private const ALGORITHM = 'aes-256-gcm';
-    private const VERSION   = "\x01";
+
+    private const VERSION = "\x01";
+
     private const NONCE_LEN = 12;
-    private const TAG_LEN   = 16;
+
+    private const TAG_LEN = 16;
 
     private string $baseNonce = '';
-    private int    $chunkIndex = 0;
+
+    private int $chunkIndex = 0;
 
     /** Raw bytes buffered from the inner stream, not yet consumed as frames. */
     private string $readBuffer = '';
@@ -44,14 +48,15 @@ final class OpenSslDecryptionStream implements BackupStream
     private string $pending = '';
 
     private bool $headerRead = false;
-    private bool $eof        = false;
-    private bool $closed     = false;
+
+    private bool $eof = false;
+
+    private bool $closed = false;
 
     public function __construct(
         private readonly BackupStream $inner,
         private string $key,
-    ) {
-    }
+    ) {}
 
     public function read(int $length = 65536): ?string
     {
@@ -61,8 +66,9 @@ final class OpenSslDecryptionStream implements BackupStream
 
         // Return any buffered plaintext first.
         if ($this->pending !== '') {
-            $out           = substr($this->pending, 0, $length);
+            $out = substr($this->pending, 0, $length);
             $this->pending = substr($this->pending, strlen($out));
+
             return $out;
         }
 
@@ -81,7 +87,7 @@ final class OpenSslDecryptionStream implements BackupStream
                 ));
             }
 
-            $this->baseNonce  = substr($header, 1, self::NONCE_LEN);
+            $this->baseNonce = substr($header, 1, self::NONCE_LEN);
             $this->headerRead = true;
         }
 
@@ -92,13 +98,14 @@ final class OpenSslDecryptionStream implements BackupStream
             return '';  // not enough data yet
         }
 
-        /** @var array{N: int} $unpacked */
-        $unpacked       = unpack('N', $lenBytes);
-        $ciphertextLen  = $unpacked['N'] ?? $unpacked[1];
+        /** @var array{1: int} $unpacked */
+        $unpacked = unpack('N', $lenBytes);
+        $ciphertextLen = $unpacked[1];
 
         // EOF marker: 4 zero bytes.
         if ($ciphertextLen === 0) {
             $this->eof = true;
+
             return null;
         }
 
@@ -108,10 +115,10 @@ final class OpenSslDecryptionStream implements BackupStream
             return '';  // not enough data yet
         }
 
-        $tag        = substr($tagAndCiphertext, 0, self::TAG_LEN);
+        $tag = substr($tagAndCiphertext, 0, self::TAG_LEN);
         $ciphertext = substr($tagAndCiphertext, self::TAG_LEN);
 
-        $nonce    = $this->deriveNonce($this->chunkIndex++);
+        $nonce = $this->deriveNonce($this->chunkIndex++);
         $plaintext = openssl_decrypt(
             $ciphertext,
             self::ALGORITHM,
@@ -123,14 +130,15 @@ final class OpenSslDecryptionStream implements BackupStream
 
         if ($plaintext === false) {
             throw new InvalidBackupException(
-                'AES-256-GCM decryption failed at chunk ' . ($this->chunkIndex - 1)
-                . ': authentication tag mismatch. The backup may be corrupt or the key is wrong.'
+                'AES-256-GCM decryption failed at chunk '.($this->chunkIndex - 1)
+                .': authentication tag mismatch. The backup may be corrupt or the key is wrong.'
             );
         }
 
         // Buffer any excess beyond $length.
         if (strlen($plaintext) > $length) {
             $this->pending = substr($plaintext, $length);
+
             return substr($plaintext, 0, $length);
         }
 
@@ -150,10 +158,10 @@ final class OpenSslDecryptionStream implements BackupStream
         $this->closed = true;
 
         // Wipe the key from PHP memory before any possible exception.
+        $key = $this->key;
+        $this->key = str_repeat("\x00", strlen($key));
         if (function_exists('sodium_memzero')) {
-            sodium_memzero($this->key);
-        } else {
-            $this->key = str_repeat("\x00", strlen($this->key));
+            sodium_memzero($key);
         }
 
         $this->inner->close();
@@ -177,6 +185,7 @@ final class OpenSslDecryptionStream implements BackupStream
                     );
                 }
                 $this->eof = true;
+
                 return null;
             }
 
@@ -188,8 +197,9 @@ final class OpenSslDecryptionStream implements BackupStream
             $this->readBuffer .= $chunk;
         }
 
-        $result           = substr($this->readBuffer, 0, $needed);
+        $result = substr($this->readBuffer, 0, $needed);
         $this->readBuffer = substr($this->readBuffer, $needed);
+
         return $result;
     }
 
@@ -199,6 +209,7 @@ final class OpenSslDecryptionStream implements BackupStream
     private function deriveNonce(int $index): string
     {
         $suffix = substr($this->baseNonce, self::NONCE_LEN - 4) ^ pack('N', $index);
-        return substr($this->baseNonce, 0, self::NONCE_LEN - 4) . $suffix;
+
+        return substr($this->baseNonce, 0, self::NONCE_LEN - 4).$suffix;
     }
 }

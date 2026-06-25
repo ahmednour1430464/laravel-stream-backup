@@ -54,7 +54,7 @@ final class StreamPipelineSmokeTest extends TestCase
     {
         $output = @shell_exec(sprintf('command -v %s 2>/dev/null', escapeshellarg($binary)));
 
-        if ($output === null || $output === '') {
+        if ($output === false || $output === null || $output === '') {
             return false;
         }
 

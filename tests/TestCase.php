@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Ahmednour\StreamBackup\Tests;
 
 use Ahmednour\StreamBackup\StreamBackupServiceProvider;
+use Illuminate\Foundation\Application;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 
 abstract class TestCase extends OrchestraTestCase
 {
     /**
-     * @param  \Illuminate\Foundation\Application  $app
+     * @param  Application  $app
      * @return array<int, class-string>
      */
     protected function getPackageProviders($app): array
@@ -21,7 +22,7 @@ abstract class TestCase extends OrchestraTestCase
     }
 
     /**
-     * @param  \Illuminate\Foundation\Application  $app
+     * @param  Application  $app
      */
     protected function defineEnvironment($app): void
     {
@@ -30,14 +31,14 @@ abstract class TestCase extends OrchestraTestCase
 
         $app['config']->set('database.default', 'testing');
         $app['config']->set('database.connections.testing', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => ':memory:',
-            'prefix'   => '',
+            'prefix' => '',
         ]);
 
         $app['config']->set('filesystems.disks.s3', [
             'driver' => 's3',
-            'key'    => 'test-key',
+            'key' => 'test-key',
             'secret' => 'test-secret',
             'region' => 'us-east-1',
             'bucket' => 'test-bucket',

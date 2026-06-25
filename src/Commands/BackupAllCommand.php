@@ -18,6 +18,7 @@ class BackupAllCommand extends Command
         $dispatched = $manager->backupAll();
 
         $this->info("Dispatched {$dispatched} backup job(s).");
+
         return self::SUCCESS;
     }
 }

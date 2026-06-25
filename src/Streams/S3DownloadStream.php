@@ -19,11 +19,12 @@ final class S3DownloadStream implements BackupStream
     /** @var resource */
     private $stream;
 
-    private bool $eof    = false;
+    private bool $eof = false;
+
     private bool $closed = false;
 
     /**
-     * @param resource $stream  The raw PHP stream resource from the S3 response body
+     * @param  resource  $stream  The raw PHP stream resource from the S3 response body
      */
     public function __construct($stream)
     {
@@ -32,7 +33,7 @@ final class S3DownloadStream implements BackupStream
         }
 
         $this->stream = $stream;
-        
+
     }
 
     public function read(int $length = 65536): ?string
@@ -41,7 +42,7 @@ final class S3DownloadStream implements BackupStream
             return null;
         }
 
-        $data = @fread($this->stream, $length);
+        $data = @fread($this->stream, max(1, $length));
 
         if ($data === false) {
             return '';
@@ -49,6 +50,7 @@ final class S3DownloadStream implements BackupStream
 
         if ($data === '' && feof($this->stream)) {
             $this->eof = true;
+
             return null;
         }
 

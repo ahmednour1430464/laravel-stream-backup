@@ -15,6 +15,5 @@ class BackupSuccessful
     public function __construct(
         public readonly BackupContext $context,
         public readonly Backup $backup
-    ) {
-    }
+    ) {}
 }

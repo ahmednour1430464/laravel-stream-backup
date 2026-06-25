@@ -13,6 +13,5 @@ class DatabaseDumped
 
     public function __construct(
         public readonly BackupContext $context
-    ) {
-    }
+    ) {}
 }

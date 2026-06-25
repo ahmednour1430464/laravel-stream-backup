@@ -33,7 +33,7 @@ final class S3DownloadDriver implements DownloadDriver
         try {
             $this->s3->headObject([
                 'Bucket' => $this->bucket,
-                'Key'    => $path,
+                'Key' => $path,
             ]);
         } catch (\Throwable $e) {
             throw new BackupFileNotFoundException(
@@ -48,8 +48,8 @@ final class S3DownloadDriver implements DownloadDriver
     {
         $response = $this->s3->getObject([
             'Bucket' => $this->bucket,
-            'Key'    => $path,
-            '@http'  => ['stream' => true],
+            'Key' => $path,
+            '@http' => ['stream' => true],
         ]);
 
         $resource = $this->extractStreamResource($response['Body']);

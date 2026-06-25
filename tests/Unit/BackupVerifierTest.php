@@ -12,11 +12,14 @@ use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Support\BackupVerifier;
 use Ahmednour\StreamBackup\Tests\TestCase;
 use Aws\S3\S3ClientInterface;
+use Illuminate\Contracts\Config\Repository;
 
 final class BackupVerifierTest extends TestCase
 {
     private function createS3Mock(int $size, string $magic): S3ClientInterface
     {
+        \assert($this->app !== null);
+
         $s3 = $this->createMock(S3ClientInterface::class);
 
         $s3->method('__call')->willReturnCallback(function (string $name, array $args) use ($size, $magic) {
@@ -26,11 +29,12 @@ final class BackupVerifierTest extends TestCase
             if ($name === 'getObject') {
                 return ['Body' => $magic];
             }
+
             return [];
         });
 
         $this->app->instance(S3ClientInterface::class, $s3);
-        
+
         config(['stream-backup.destination.driver' => 's3']);
         config(['filesystems.disks.s3.bucket' => 'test-bucket']);
 
@@ -39,9 +43,11 @@ final class BackupVerifierTest extends TestCase
 
     private function createVerifier(?EncryptionFactory $factory = null): BackupVerifier
     {
+        \assert($this->app !== null);
+
         return new BackupVerifier(
             $this->app,
-            $this->app->make(\Illuminate\Contracts\Config\Repository::class),
+            $this->app->make(Repository::class),
             $factory ?? $this->app->make(EncryptionFactory::class)
         );
     }
@@ -168,17 +174,34 @@ final class BackupVerifierTest extends TestCase
 
     public function test_custom_driver_without_interface_bypasses_magic_bytes_check(): void
     {
+        \assert($this->app !== null);
         $factory = $this->app->make(EncryptionFactory::class);
         $factory->extend('custom-driver', function () {
-            return new class implements EncryptionDriver {
-                public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
-                public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
-                public function name(): string { return 'custom-driver'; }
-                public function keyLength(): int { return 0; }
+            return new class implements EncryptionDriver
+            {
+                public function spawn(BackupStream $inner, string $key): BackupStream
+                {
+                    return $inner;
+                }
+
+                public function spawnDecrypt(BackupStream $inner, string $key): BackupStream
+                {
+                    return $inner;
+                }
+
+                public function name(): string
+                {
+                    return 'custom-driver';
+                }
+
+                public function keyLength(): int
+                {
+                    return 0;
+                }
             };
         });
 
-        $this->createS3Mock(1000, "anything");
+        $this->createS3Mock(1000, 'anything');
         $verifier = $this->createVerifier($factory);
 
         $backup = new Backup([
@@ -195,15 +218,38 @@ final class BackupVerifierTest extends TestCase
 
     public function test_custom_driver_with_interface_performs_check(): void
     {
+        \assert($this->app !== null);
         $factory = $this->app->make(EncryptionFactory::class);
         $factory->extend('custom-verifiable-driver', function () {
-            return new class implements EncryptionDriver, VerifiesMagicBytes {
-                public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
-                public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
-                public function name(): string { return 'custom-verifiable-driver'; }
-                public function keyLength(): int { return 0; }
-                public function magicBytesLength(): int { return 3; }
-                public function verifyMagicBytes(string $magic, Backup $backup): void {
+            return new class implements EncryptionDriver, VerifiesMagicBytes
+            {
+                public function spawn(BackupStream $inner, string $key): BackupStream
+                {
+                    return $inner;
+                }
+
+                public function spawnDecrypt(BackupStream $inner, string $key): BackupStream
+                {
+                    return $inner;
+                }
+
+                public function name(): string
+                {
+                    return 'custom-verifiable-driver';
+                }
+
+                public function keyLength(): int
+                {
+                    return 0;
+                }
+
+                public function magicBytesLength(): int
+                {
+                    return 3;
+                }
+
+                public function verifyMagicBytes(string $magic, Backup $backup): void
+                {
                     if ($magic !== 'ABC') {
                         throw new \RuntimeException('Custom invalid magic!');
                     }
@@ -211,7 +257,7 @@ final class BackupVerifierTest extends TestCase
             };
         });
 
-        $this->createS3Mock(1000, "XYZ");
+        $this->createS3Mock(1000, 'XYZ');
         $verifier = $this->createVerifier($factory);
 
         $backup = new Backup([

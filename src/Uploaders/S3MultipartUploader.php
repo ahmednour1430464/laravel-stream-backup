@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Ahmednour\StreamBackup\Uploaders;
@@ -11,7 +12,6 @@ use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Uploaders\Sessions\S3MultipartSession;
 use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
 use Aws\S3\S3ClientInterface;
-
 use Illuminate\Support\Str;
 
 final class S3MultipartUploader implements UploadDriver
@@ -23,18 +23,18 @@ final class S3MultipartUploader implements UploadDriver
 
     public function preflight(): void
     {
-        $testKey = '.stream-backup-preflight-' . Str::random(16);
+        $testKey = '.stream-backup-preflight-'.Str::random(16);
 
         try {
             $this->s3->putObject([
                 'Bucket' => $this->bucket,
-                'Key'    => $testKey,
-                'Body'   => 'pre-flight check',
+                'Key' => $testKey,
+                'Body' => 'pre-flight check',
             ]);
 
             $this->s3->deleteObject([
                 'Bucket' => $this->bucket,
-                'Key'    => $testKey,
+                'Key' => $testKey,
             ]);
         } catch (\Throwable $e) {
             throw new \RuntimeException("Pre-flight check failed for S3 bucket '{$this->bucket}'. The bucket may be unreachable, read-only, or lack delete permissions.", 0, $e);
@@ -43,9 +43,9 @@ final class S3MultipartUploader implements UploadDriver
 
     public function initiate(BackupMetadata $metadata): WriteSession
     {
-        $result   = $this->s3->createMultipartUpload([
-            'Bucket'      => $metadata->bucket,
-            'Key'         => $metadata->path,
+        $result = $this->s3->createMultipartUpload([
+            'Bucket' => $metadata->bucket,
+            'Key' => $metadata->path,
             'ContentType' => $metadata->contentType,
         ]);
         $uploadId = $result['UploadId'] ?? null;
@@ -64,11 +64,11 @@ final class S3MultipartUploader implements UploadDriver
         assert($session instanceof S3MultipartSession); // only S3MultipartUploader creates these
 
         $result = $this->s3->uploadPart([
-            'Bucket'        => $session->metadata->bucket,
-            'Key'           => $session->metadata->path,
-            'UploadId'      => $session->uploadId,
-            'PartNumber'    => $chunkNumber,
-            'Body'          => $body,
+            'Bucket' => $session->metadata->bucket,
+            'Key' => $session->metadata->path,
+            'UploadId' => $session->uploadId,
+            'PartNumber' => $chunkNumber,
+            'Body' => $body,
             'ContentLength' => $size,
         ]);
 
@@ -93,9 +93,9 @@ final class S3MultipartUploader implements UploadDriver
         }
 
         $this->s3->completeMultipartUpload([
-            'Bucket'          => $session->metadata->bucket,
-            'Key'             => $session->metadata->path,
-            'UploadId'        => $session->uploadId,
+            'Bucket' => $session->metadata->bucket,
+            'Key' => $session->metadata->path,
+            'UploadId' => $session->uploadId,
             'MultipartUpload' => ['Parts' => $session->parts()],
         ]);
 
@@ -108,8 +108,8 @@ final class S3MultipartUploader implements UploadDriver
 
         try {
             $this->s3->abortMultipartUpload([
-                'Bucket'   => $session->metadata->bucket,
-                'Key'      => $session->metadata->path,
+                'Bucket' => $session->metadata->bucket,
+                'Key' => $session->metadata->path,
                 'UploadId' => $session->uploadId,
             ]);
         } catch (\Throwable) {
@@ -122,12 +122,12 @@ final class S3MultipartUploader implements UploadDriver
         $duration = max(0.0, microtime(true) - $session->metadata->startedAt->getTimestamp());
 
         return new UploadResult(
-            bucket:          $session->metadata->bucket,
-            key:             $session->metadata->path,
-            sizeBytes:       $session->totalBytes(),
-            partCount:       $session->partCount(),
+            bucket: $session->metadata->bucket,
+            key: $session->metadata->path,
+            sizeBytes: $session->totalBytes(),
+            partCount: $session->partCount(),
             durationSeconds: $duration,
-            checksum:        '',
+            checksum: '',
         );
     }
 }

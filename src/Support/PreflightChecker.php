@@ -10,8 +10,7 @@ class PreflightChecker
 {
     public function __construct(
         private readonly UploadDriver $uploader,
-    ) {
-    }
+    ) {}
 
     public function check(): void
     {

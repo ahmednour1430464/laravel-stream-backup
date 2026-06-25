@@ -1,0 +1,21 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+
+    paths:
+        - src
+        - tests
+
+    level: 8
+
+    # Eloquent property PHPDoc types (e.g. @property BackupStatus $status)
+    # are technically assertions, not guarantees — during model hydration the
+    # runtime value may differ. Treating them as uncertain prevents false
+    # “unreachable branch” errors in defensive code.
+    treatPhpDocTypesAsCertain: false
+
+    tmpDir: .phpstan/cache
+
+    excludePaths:
+        - vendor/*

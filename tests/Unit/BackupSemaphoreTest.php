@@ -12,8 +12,10 @@ final class BackupSemaphoreTest extends TestCase
 {
     private function makeSemaphore(int $max): BackupSemaphore
     {
+        \assert($this->app !== null);
+
         return new BackupSemaphore(
-            cache:         $this->app->make(Repository::class),
+            cache: $this->app->make(Repository::class),
             maxConcurrent: $max,
         );
     }

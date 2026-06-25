@@ -25,9 +25,8 @@ final class AutoCompressionDriver implements CompressionDriver
     public function __construct(
         private readonly BinaryLocator $locator,
         private readonly int $level = 4,
-        private readonly LoggerInterface $logger = new NullLogger(),
-    ) {
-    }
+        private readonly LoggerInterface $logger = new NullLogger,
+    ) {}
 
     public function buildCommand(): array
     {
@@ -61,8 +60,8 @@ final class AutoCompressionDriver implements CompressionDriver
 
         $this->logger->notice(
             'stream-backup: pigz not found, falling back to gzip. '
-            . 'Install pigz for 3–4× faster parallel compression: '
-            . 'apt-get install pigz / yum install pigz / brew install pigz'
+            .'Install pigz for 3–4× faster parallel compression: '
+            .'apt-get install pigz / yum install pigz / brew install pigz'
         );
 
         $this->resolved = new GzipDriver($this->locator, $this->level);

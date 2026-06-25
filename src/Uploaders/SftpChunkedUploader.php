@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 // src/Uploaders/SftpChunkedUploader.php
+
 namespace Ahmednour\StreamBackup\Uploaders;
 
 use Ahmednour\StreamBackup\Contracts\UploadDriver;
@@ -12,6 +13,7 @@ use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Models\Backup;
 use Ahmednour\StreamBackup\Uploaders\Sessions\SftpWriteSession;
 use Ahmednour\StreamBackup\Uploaders\Sessions\WriteSession;
+use Illuminate\Support\Str;
 use phpseclib3\Net\SFTP;
 
 final class SftpChunkedUploader implements UploadDriver
@@ -26,7 +28,8 @@ final class SftpChunkedUploader implements UploadDriver
     private function resolvePath(string $path): string
     {
         $path = ltrim($path, '/');
-        return $this->root !== '' ? rtrim($this->root, '/') . '/' . $path : $path;
+
+        return $this->root !== '' ? rtrim($this->root, '/').'/'.$path : $path;
     }
 
     private function getFileMode(): int
@@ -52,7 +55,7 @@ final class SftpChunkedUploader implements UploadDriver
 
     public function preflight(): void
     {
-        $testPath = $this->resolvePath('.stream-backup-preflight-' . \Illuminate\Support\Str::random(16));
+        $testPath = $this->resolvePath('.stream-backup-preflight-'.Str::random(16));
 
         try {
             if (! $this->sftp->put($testPath, 'pre-flight check')) {
@@ -68,7 +71,7 @@ final class SftpChunkedUploader implements UploadDriver
     public function initiate(BackupMetadata $metadata): WriteSession
     {
         $remotePath = $this->resolvePath($metadata->path);
-        
+
         $this->ensureDirectoryExists(dirname($remotePath));
 
         // Create or truncate the remote file once
@@ -107,6 +110,7 @@ final class SftpChunkedUploader implements UploadDriver
     public function complete(WriteSession $session): UploadResult
     {
         assert($session instanceof SftpWriteSession);
+
         // Nothing to commit — every uploadChunk() already landed on disk
         return $this->buildResult($session);
     }
@@ -117,7 +121,8 @@ final class SftpChunkedUploader implements UploadDriver
 
         try {
             $this->sftp->delete($session->remotePath);
-        } catch (\Throwable) {}
+        } catch (\Throwable) {
+        }
     }
 
     private function buildResult(SftpWriteSession $session): UploadResult
@@ -125,12 +130,12 @@ final class SftpChunkedUploader implements UploadDriver
         $duration = max(0.0, microtime(true) - $session->metadata->startedAt->getTimestamp());
 
         return new UploadResult(
-            bucket:          '',
-            key:             $session->remotePath,
-            sizeBytes:       $session->totalBytes(),
-            partCount:       $session->partCount(),
+            bucket: '',
+            key: $session->remotePath,
+            sizeBytes: $session->totalBytes(),
+            partCount: $session->partCount(),
             durationSeconds: $duration,
-            checksum:        '',
+            checksum: '',
         );
     }
 }

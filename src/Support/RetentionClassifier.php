@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ahmednour\StreamBackup\Support;
 
 use Ahmednour\StreamBackup\Enums\RetentionTier;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use DateTimeInterface;
 
@@ -20,7 +21,7 @@ final class RetentionClassifier
 {
     public function classify(DateTimeInterface $at): RetentionTier
     {
-        $carbon = $at instanceof CarbonInterface ? $at : \Carbon\CarbonImmutable::instance($at);
+        $carbon = $at instanceof CarbonInterface ? $at : CarbonImmutable::instance($at);
 
         if ($carbon->dayOfWeek === CarbonInterface::SUNDAY) {
             $endOfMonth = $carbon->copy()->endOfMonth();
@@ -31,9 +32,10 @@ final class RetentionClassifier
                 ? $endOfMonth
                 : $endOfMonth->previous(CarbonInterface::SUNDAY);
 
-            if ($carbon->isSameDay($lastSundayOfMonth)) {
+            if ($lastSundayOfMonth !== false && $carbon->isSameDay($lastSundayOfMonth)) {
                 return RetentionTier::Monthly;
             }
+
             return RetentionTier::Weekly;
         }
 

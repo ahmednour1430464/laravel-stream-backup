@@ -10,7 +10,7 @@ use Ahmednour\StreamBackup\DTOs\BackupMetadata;
  * Mutable session holding the state of a single S3 multipart upload.
  * Parts are appended as they are uploaded, in order.
  */
-final class S3MultipartSession  extends WriteSession
+final class S3MultipartSession extends WriteSession
 {
     /** @var array<int, array{PartNumber: int, ETag: string}> */
     private array $parts = [];
@@ -29,5 +29,8 @@ final class S3MultipartSession  extends WriteSession
     }
 
     /** @return array<int, array{PartNumber: int, ETag: string}> */
-    public function parts(): array { return $this->parts; }
+    public function parts(): array
+    {
+        return $this->parts;
+    }
 }

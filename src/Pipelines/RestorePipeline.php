@@ -51,8 +51,7 @@ final class RestorePipeline
         private readonly TableRestorer $restorer,
         private readonly DownloadDriver $downloader,
         private readonly Config $config,
-    ) {
-    }
+    ) {}
 
     public function run(RestoreContext $context, Backup $backup, ?callable $onProgress = null): RestoreResult
     {
@@ -68,9 +67,9 @@ final class RestorePipeline
         if ($onProgress) {
             $onProgress(RestoreStatus::Downloading);
         }
-        Log::debug("[RestorePipeline] Requesting download stream...");
-        $downloadStream = $this->downloader->download($backup->path);
-        Log::debug("[RestorePipeline] Download stream initialized.");
+        Log::debug('[RestorePipeline] Requesting download stream...');
+        $downloadStream = $this->downloader->download($backup->path ?? '');
+        Log::debug('[RestorePipeline] Download stream initialized.');
 
         // 3. Decrypt if the backup was encrypted.
         $isEncrypted = $backup->encryption_driver !== null && $backup->encryption_driver !== '' && $backup->encryption_driver !== 'none';
@@ -78,22 +77,22 @@ final class RestorePipeline
             $onProgress(RestoreStatus::Decrypting);
         }
         $decryptedStream = $this->applyDecryption($downloadStream, $backup);
-        Log::debug("[RestorePipeline] Decryption stream initialized (Driver: " . ($backup->encryption_driver ?: 'none') . ").");
+        Log::debug('[RestorePipeline] Decryption stream initialized (Driver: '.($backup->encryption_driver ?: 'none').').');
 
         // 4. Spawn decompressor (pigz -d -c) and pipe the stream through it.
         if ($onProgress) {
             $onProgress(RestoreStatus::Decompressing);
         }
-        Log::debug("[RestorePipeline] Spawning decompressor process...");
+        Log::debug('[RestorePipeline] Spawning decompressor process...');
         [$decompProc, $decompStdin, $decompStdout, $decompStderr] = $this->spawnDecompressor();
-        Log::debug("[RestorePipeline] Decompressor process spawned successfully.");
+        Log::debug('[RestorePipeline] Decompressor process spawned successfully.');
 
         try {
             // 5. Pipe the decrypted stream into the decompressor's stdin,
             //    while simultaneously reading decompressed SQL from stdout.
             //    Collect the full decompressed output into a temp stream
             //    that the SqlDumpParser can read line-by-line.
-            Log::debug("[RestorePipeline] Piping stream to decompressor...");
+            Log::debug('[RestorePipeline] Piping stream to decompressor...');
             $sqlStream = $this->pipeToDecompressor(
                 $decryptedStream,
                 $decompProc,
@@ -103,15 +102,15 @@ final class RestorePipeline
                 $readChunk,
             );
             $streamStats = fstat($sqlStream);
-            Log::debug("[RestorePipeline] Decompression finished. Temp stream size: " . ($streamStats['size'] ?? 'unknown') . " bytes.");
+            Log::debug('[RestorePipeline] Decompression finished. Temp stream size: '.($streamStats['size'] ?? 'unknown').' bytes.');
 
             // 6. Parse the decompressed SQL to extract requested table blocks.
             if ($onProgress) {
                 $onProgress(RestoreStatus::Parsing);
             }
-            Log::debug("[RestorePipeline] Parsing SQL stream for requested tables...");
+            Log::debug('[RestorePipeline] Parsing SQL stream for requested tables...');
             $tableBlocks = $this->parser->parse($sqlStream, $context->tables);
-            Log::debug("[RestorePipeline] Parsing completed. Found " . count($tableBlocks) . " table blocks.");
+            Log::debug('[RestorePipeline] Parsing completed. Found '.count($tableBlocks).' table blocks.');
 
             // Close the sql stream now that parsing is complete.
             if (is_resource($sqlStream)) {
@@ -131,9 +130,10 @@ final class RestorePipeline
             if ($onProgress) {
                 $onProgress(RestoreStatus::Importing);
             }
-            Log::debug("[RestorePipeline] Handing over to TableRestorer...");
+            Log::debug('[RestorePipeline] Handing over to TableRestorer...');
             $result = $this->restorer->restore($tableBlocks, $context->connectionName, $startTime);
-            Log::debug("[RestorePipeline] TableRestorer completed.");
+            Log::debug('[RestorePipeline] TableRestorer completed.');
+
             return $result;
         } catch (\Throwable $e) {
             Log::error("[RestorePipeline] Exception caught: {$e->getMessage()}", ['exception' => $e]);
@@ -150,7 +150,7 @@ final class RestorePipeline
      * them with stale dump data, silently wiping the current restore
      * record and replacing backup metadata with old data.
      *
-     * @param  array<string, resource> $tableBlocks
+     * @param  array<string, resource>  $tableBlocks
      * @return array<string, resource>
      */
     private function excludeTables(array $tableBlocks): array
@@ -192,7 +192,7 @@ final class RestorePipeline
         }
 
         $driver = $this->encryptionFactory->make($driverName);
-        $key    = $this->keyResolver->resolve($driver);
+        $key = $this->keyResolver->resolve($driver);
 
         return $driver->spawnDecrypt($stream, $key);
     }
@@ -211,15 +211,18 @@ final class RestorePipeline
         mixed $decompStderr,
         int $readChunk,
     ): mixed {
-        Log::debug("[RestorePipeline] Entering pipeToDecompressor loop.");
+        Log::debug('[RestorePipeline] Entering pipeToDecompressor loop.');
         $output = fopen('php://temp', 'r+b');
+        if ($output === false) {
+            throw new PipelineException('Failed to open php://temp stream for decompressed output.');
+        }
 
-        $pendingChunk    = '';
-        $sourceDone      = false;
-        $stdinClosed     = false;
-        $stdoutDone      = false;
-        $stderrDone      = false;
-        $stderrBuffer    = '';
+        $pendingChunk = '';
+        $sourceDone = false;
+        $stdinClosed = false;
+        $stdoutDone = false;
+        $stderrDone = false;
+        $stderrBuffer = '';
 
         while (true) {
             // Read from the BackupStream (non-blocking) when we have no pending data.
@@ -232,8 +235,8 @@ final class RestorePipeline
                 }
             }
 
-            $read   = [];
-            $write  = [];
+            $read = [];
+            $write = [];
             $except = null;
 
             if (! $stdoutDone) {
@@ -257,7 +260,7 @@ final class RestorePipeline
 
             if ($changed === false) {
                 $err = error_get_last();
-                if ($err !== null && isset($err['message']) && str_contains($err['message'], 'Interrupted system call')) {
+                if ($err !== null && str_contains($err['message'], 'Interrupted system call')) {
                     continue;
                 }
                 throw new PipelineException('stream_select failed during decompression.');
@@ -282,7 +285,7 @@ final class RestorePipeline
 
             // Read decompressed output.
             if (! $stdoutDone && in_array($decompStdout, $read, true)) {
-                $data = @fread($decompStdout, $readChunk);
+                $data = @fread($decompStdout, max(1, $readChunk));
                 if ($data === false || ($data === '' && feof($decompStdout))) {
                     $stdoutDone = true;
                 } elseif ($data !== '') {
@@ -302,7 +305,7 @@ final class RestorePipeline
         }
 
         // Close remaining pipes and validate exit code.
-        Log::debug("[RestorePipeline] Exited pipeToDecompressor loop. Validating exit code...");
+        Log::debug('[RestorePipeline] Exited pipeToDecompressor loop. Validating exit code...');
         if (is_resource($decompStdout)) {
             @fclose($decompStdout);
         }
@@ -311,12 +314,13 @@ final class RestorePipeline
         }
 
         $this->validateDecompressorExit($decompProc, $stderrBuffer);
-        Log::debug("[RestorePipeline] Decompressor exit code validated successfully.");
+        Log::debug('[RestorePipeline] Decompressor exit code validated successfully.');
 
         // Close the source stream (which may also close the decryption layer).
         $source->close();
 
         rewind($output);
+
         return $output;
     }
 
@@ -375,7 +379,7 @@ final class RestorePipeline
     }
 
     /**
-     * @param resource|null $proc
+     * @param  resource|null  $proc
      */
     private function killProcess($proc): void
     {

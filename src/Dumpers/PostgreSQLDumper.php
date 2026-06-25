@@ -79,7 +79,7 @@ final class PostgreSQLDumper extends AbstractProcessDumper
 
     private function resolveCredentials(BackupContext $context): DatabaseCredentials
     {
-        $key  = "database.connections.{$context->connectionName}";
+        $key = "database.connections.{$context->connectionName}";
         $conn = (array) $this->config->get($key, []);
 
         if ($conn === []) {
@@ -90,8 +90,8 @@ final class PostgreSQLDumper extends AbstractProcessDumper
         }
 
         return new DatabaseCredentials(
-            host:     (string) ($conn['host']     ?? '127.0.0.1'),
-            port:     (int)    ($conn['port']     ?? 5432),
+            host: (string) ($conn['host'] ?? '127.0.0.1'),
+            port: (int) ($conn['port'] ?? 5432),
             database: $context->databaseName,
             username: (string) ($conn['username'] ?? ''),
             password: (string) ($conn['password'] ?? ''),

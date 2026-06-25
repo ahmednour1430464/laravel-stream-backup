@@ -10,6 +10,8 @@ use Ahmednour\StreamBackup\Models\Backup;
 use Aws\S3\S3ClientInterface;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
+use phpseclib3\Crypt\Common\PrivateKey;
+use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Net\SFTP;
 
 /**
@@ -23,8 +25,7 @@ final class BackupVerifier
         private readonly Container $container,
         private readonly Config $config,
         private readonly EncryptionFactory $encryptionFactory,
-    ) {
-    }
+    ) {}
 
     public function verify(Backup $backup): void
     {
@@ -32,10 +33,10 @@ final class BackupVerifier
 
         $remoteSize = 0;
         $magic = '';
-        
+
         $encryptionDriver = $this->encryptionFactory->make($backup->encryption_driver);
-        $length = $encryptionDriver instanceof VerifiesMagicBytes 
-            ? $encryptionDriver->magicBytesLength() 
+        $length = $encryptionDriver instanceof VerifiesMagicBytes
+            ? $encryptionDriver->magicBytesLength()
             : 0;
 
         if ($driverName === 's3') {
@@ -44,7 +45,7 @@ final class BackupVerifier
 
             $head = $s3->headObject([
                 'Bucket' => $bucket,
-                'Key'    => $backup->path,
+                'Key' => $backup->path,
             ]);
 
             $remoteSize = (int) ($head['ContentLength'] ?? 0);
@@ -52,36 +53,42 @@ final class BackupVerifier
             if ($length > 0) {
                 $range = $s3->getObject([
                     'Bucket' => $bucket,
-                    'Key'    => $backup->path,
-                    'Range'  => 'bytes=0-' . ($length - 1),
+                    'Key' => $backup->path,
+                    'Range' => 'bytes=0-'.($length - 1),
                 ]);
                 $magic = (string) $range['Body'];
             }
         } elseif ($driverName === 'sftp') {
             if (! class_exists(SFTP::class)) {
-                throw new \RuntimeException("SFTP verification requires phpseclib/phpseclib.");
+                throw new \RuntimeException('SFTP verification requires phpseclib/phpseclib.');
             }
 
             $cfg = (array) $this->config->get('stream-backup.destination', []);
             $sftp = new SFTP($cfg['host'], (int) ($cfg['port'] ?? 22));
-            
+
             $authed = isset($cfg['private_key'])
                 ? $sftp->login(
                     $cfg['username'],
-                    \phpseclib3\Crypt\PublicKeyLoader::load(
-                        file_get_contents($cfg['private_key']),
-                        $cfg['passphrase'] ?? false
-                    )
+                    (function () use ($cfg) {
+                        $contents = file_get_contents($cfg['private_key']);
+                        if ($contents === false) {
+                            throw new \RuntimeException("Cannot read private key file: {$cfg['private_key']}");
+                        }
+                        $key = PublicKeyLoader::load($contents, $cfg['passphrase'] ?? false);
+                        assert($key instanceof PrivateKey);
+
+                        return $key;
+                    })()
                 )
                 : $sftp->login($cfg['username'], $cfg['password'] ?? '');
 
             if (! $authed) {
-                throw new \RuntimeException("SFTP verification failed: Authentication failed.");
+                throw new \RuntimeException('SFTP verification failed: Authentication failed.');
             }
 
             $root = (string) ($cfg['root'] ?? '');
-            $remotePath = ltrim($backup->path, '/');
-            $remotePath = $root !== '' ? rtrim($root, '/') . '/' . $remotePath : $remotePath;
+            $remotePath = ltrim($backup->path ?? '', '/');
+            $remotePath = $root !== '' ? rtrim($root, '/').'/'.$remotePath : $remotePath;
 
             $remoteSize = (int) $sftp->filesize($remotePath);
 
@@ -89,10 +96,10 @@ final class BackupVerifier
                 $magic = (string) $sftp->get($remotePath, false, 0, $length);
             }
         } elseif ($driverName === 'local') {
-            $diskName  = (string) $this->config->get('stream-backup.default_disk', 'local');
-            $root      = (string) $this->config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
-            $localPath = ltrim($backup->path, '/');
-            $localPath = $root !== '' ? rtrim($root, '/') . '/' . $localPath : $localPath;
+            $diskName = (string) $this->config->get('stream-backup.default_disk', 'local');
+            $root = (string) $this->config->get("filesystems.disks.{$diskName}.root", storage_path('app/backups'));
+            $localPath = ltrim($backup->path ?? '', '/');
+            $localPath = $root !== '' ? rtrim($root, '/').'/'.$localPath : $localPath;
 
             if (! file_exists($localPath)) {
                 throw new \RuntimeException("Local backup file not found for verification: {$localPath}");
@@ -128,6 +135,7 @@ final class BackupVerifier
     private function bucket(Backup $backup): string
     {
         $configured = $this->config->get("filesystems.disks.{$backup->disk}.bucket");
+
         return is_string($configured) && $configured !== '' ? $configured : $backup->disk;
     }
 }

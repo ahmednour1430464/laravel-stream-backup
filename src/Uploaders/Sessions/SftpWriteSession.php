@@ -10,9 +10,9 @@ use phpseclib3\Net\SFTP;
 final class SftpWriteSession extends WriteSession
 {
     public function __construct(
-        public readonly SFTP   $sftp,
+        public readonly SFTP $sftp,
         public readonly string $remotePath,
-        BackupMetadata         $metadata,
+        BackupMetadata $metadata,
     ) {
         parent::__construct($metadata);
     }

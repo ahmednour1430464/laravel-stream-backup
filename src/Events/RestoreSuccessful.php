@@ -17,6 +17,5 @@ class RestoreSuccessful
         public readonly RestoreContext $context,
         public readonly Restore $restore,
         public readonly RestoreResult $result,
-    ) {
-    }
+    ) {}
 }

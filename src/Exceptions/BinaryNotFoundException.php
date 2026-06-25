@@ -6,6 +6,4 @@ namespace Ahmednour\StreamBackup\Exceptions;
 
 use RuntimeException;
 
-class BinaryNotFoundException extends RuntimeException
-{
-}
+class BinaryNotFoundException extends RuntimeException {}

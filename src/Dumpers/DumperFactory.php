@@ -31,14 +31,13 @@ final class DumperFactory
     public function __construct(
         private readonly Application $app,
         private readonly Config $config,
-    ) {
-    }
+    ) {}
 
     /**
      * Register a custom dumper driver.
      *
-     * @param string  $name    Driver name (e.g. 'mongodb', 'mariadb')
-     * @param Closure $factory fn(Application): DatabaseDumper
+     * @param  string  $name  Driver name (e.g. 'mongodb', 'mariadb')
+     * @param  Closure  $factory  fn(Application): DatabaseDumper
      */
     public function extend(string $name, Closure $factory): void
     {
@@ -53,7 +52,7 @@ final class DumperFactory
      *   2. Built-in drivers (mysql, pgsql, sqlite)
      *   3. InvalidConfigException
      *
-     * @param string|null $driver  null = use global config, 'auto' = detect from default connection
+     * @param  string|null  $driver  null = use global config, 'auto' = detect from default connection
      */
     public function make(?string $driver = null): DatabaseDumper
     {
@@ -68,12 +67,12 @@ final class DumperFactory
         }
 
         return match ($driver) {
-            'mysql'  => $this->app->make(MySQLDumper::class),
-            'pgsql'  => $this->app->make(PostgreSQLDumper::class),
+            'mysql' => $this->app->make(MySQLDumper::class),
+            'pgsql' => $this->app->make(PostgreSQLDumper::class),
             'sqlite' => $this->app->make(SQLiteDumper::class),
-            default  => throw new InvalidConfigException(
+            default => throw new InvalidConfigException(
                 "Unknown dump driver '{$driver}'. "
-                . 'Register it via DumperFactory::extend() or use one of: mysql, pgsql, sqlite.'
+                .'Register it via DumperFactory::extend() or use one of: mysql, pgsql, sqlite.'
             ),
         };
     }

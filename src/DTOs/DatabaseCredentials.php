@@ -12,6 +12,5 @@ final class DatabaseCredentials
         public readonly string $database,
         public readonly string $username,
         public readonly string $password,
-    ) {
-    }
+    ) {}
 }

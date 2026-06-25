@@ -14,7 +14,7 @@ final class DefinerStripperTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->stripper = new DefinerStripper();
+        $this->stripper = new DefinerStripper;
     }
 
     public function test_strips_definer_from_mysqldump_view_definition(): void

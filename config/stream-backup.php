@@ -19,15 +19,15 @@ return [
         'driver' => env('STREAM_BACKUP_DESTINATION_DRIVER', 's3'),
 
         // sftp only
-        'host'        => env('STREAM_BACKUP_SFTP_HOST'),
-        'port'        => (int) env('STREAM_BACKUP_SFTP_PORT', 22),
-        'username'    => env('STREAM_BACKUP_SFTP_USERNAME'),
-        'password'    => env('STREAM_BACKUP_SFTP_PASSWORD'),
+        'host' => env('STREAM_BACKUP_SFTP_HOST'),
+        'port' => (int) env('STREAM_BACKUP_SFTP_PORT', 22),
+        'username' => env('STREAM_BACKUP_SFTP_USERNAME'),
+        'password' => env('STREAM_BACKUP_SFTP_PASSWORD'),
         'private_key' => env('STREAM_BACKUP_SFTP_PRIVATE_KEY'),  // absolute path to .pem
-        'passphrase'  => env('STREAM_BACKUP_SFTP_PASSPHRASE'),
-        'visibility'  => 'public', // `private` = 0600, `public` = 0700
+        'passphrase' => env('STREAM_BACKUP_SFTP_PASSPHRASE'),
+        'visibility' => 'public', // `private` = 0600, `public` = 0700
         'directory_visibility' => 'public', // `private` = 0700, `public` = 0755
-        'root'        => env('STREAM_BACKUP_SFTP_ROOT'),
+        'root' => env('STREAM_BACKUP_SFTP_ROOT'),
     ],
 
     /*
@@ -47,7 +47,7 @@ return [
     */
     'compression' => [
         'driver' => env('STREAM_BACKUP_COMPRESSION_DRIVER', 'auto'),
-        'level'  => (int) env('STREAM_BACKUP_COMPRESSION_LEVEL', 4),
+        'level' => (int) env('STREAM_BACKUP_COMPRESSION_LEVEL', 4),
     ],
 
     /*
@@ -76,8 +76,8 @@ return [
     |
     */
     'encryption' => [
-        'driver'   => env('STREAM_BACKUP_ENCRYPTION_DRIVER', 'none'),
-        'key'      => env('STREAM_BACKUP_ENCRYPTION_KEY'),
+        'driver' => env('STREAM_BACKUP_ENCRYPTION_DRIVER', 'none'),
+        'key' => env('STREAM_BACKUP_ENCRYPTION_KEY'),
         'key_file' => env('STREAM_BACKUP_ENCRYPTION_KEY_FILE'),
     ],
 
@@ -97,14 +97,14 @@ return [
     |
     */
     'dump' => [
-        'driver'      => env('STREAM_BACKUP_DUMP_DRIVER', 'auto'),
+        'driver' => env('STREAM_BACKUP_DUMP_DRIVER', 'auto'),
         'extra_flags' => [],
 
         'drivers' => [
             'mysql' => [
                 // Backward compat: checks STREAM_BACKUP_MYSQLDUMP first
                 'binary' => env('STREAM_BACKUP_MYSQLDUMP_BINARY',
-                                env('STREAM_BACKUP_MYSQLDUMP', 'mysqldump')),
+                    env('STREAM_BACKUP_MYSQLDUMP', 'mysqldump')),
             ],
             'pgsql' => [
                 'binary' => env('STREAM_BACKUP_PGDUMP_BINARY', 'pg_dump'),
@@ -142,8 +142,8 @@ return [
     |
     */
     'retention' => [
-        'daily'   => 7,
-        'weekly'  => 4,
+        'daily' => 7,
+        'weekly' => 4,
         'monthly' => 6,
     ],
 
@@ -158,10 +158,10 @@ return [
     |
     */
     'queue' => [
-        'connection'     => env('STREAM_BACKUP_QUEUE_CONNECTION', 'redis'),
-        'queue'          => env('STREAM_BACKUP_QUEUE', 'backups'),
+        'connection' => env('STREAM_BACKUP_QUEUE_CONNECTION', 'redis'),
+        'queue' => env('STREAM_BACKUP_QUEUE', 'backups'),
         'max_concurrent' => (int) env('STREAM_BACKUP_MAX_CONCURRENT', 2),
-        'slot_ttl'       => 21600, // 6 hours
+        'slot_ttl' => 21600, // 6 hours
     ],
 
     /*
@@ -216,24 +216,24 @@ return [
     |       `queue` block above, which only routes RunBackupJob.
     |
     */
-    'auto_schedule'       => env('STREAM_BACKUP_AUTO_SCHEDULE', true),
+    'auto_schedule' => env('STREAM_BACKUP_AUTO_SCHEDULE', true),
     'verify_after_upload' => true,
 
     'schedule' => [
-        'timezone'   => env('STREAM_BACKUP_SCHEDULE_TZ'),
+        'timezone' => env('STREAM_BACKUP_SCHEDULE_TZ'),
         'connection' => env('STREAM_BACKUP_CLEANUP_CONNECTION'),
-        'queue'      => env('STREAM_BACKUP_CLEANUP_QUEUE'),
+        'queue' => env('STREAM_BACKUP_CLEANUP_QUEUE'),
 
         'cleanup' => [
             'frequency' => env('STREAM_BACKUP_CLEANUP_FREQUENCY', 'daily'),
-            'time'      => env('STREAM_BACKUP_CLEANUP_TIME', '03:15'),
-            'cron'      => env('STREAM_BACKUP_CLEANUP_CRON'),
+            'time' => env('STREAM_BACKUP_CLEANUP_TIME', '03:15'),
+            'cron' => env('STREAM_BACKUP_CLEANUP_CRON'),
         ],
 
         'stale_multipart' => [
-            'frequency'   => env('STREAM_BACKUP_STALE_FREQUENCY', 'hourly'),
-            'minutes'     => (int) env('STREAM_BACKUP_STALE_MINUTES', 60),
-            'cron'        => env('STREAM_BACKUP_STALE_CRON'),
+            'frequency' => env('STREAM_BACKUP_STALE_FREQUENCY', 'hourly'),
+            'minutes' => (int) env('STREAM_BACKUP_STALE_MINUTES', 60),
+            'cron' => env('STREAM_BACKUP_STALE_CRON'),
             'stale_hours' => max(1, (int) env('STREAM_BACKUP_STALE_HOURS', 6)),
         ],
     ],
@@ -263,8 +263,8 @@ return [
     |
     */
     'restore' => [
-        'strip_definers'        => env('STREAM_BACKUP_RESTORE_STRIP_DEFINERS', true),
-        'skip_on_error'         => env('STREAM_BACKUP_RESTORE_SKIP_ON_ERROR', true),
+        'strip_definers' => env('STREAM_BACKUP_RESTORE_STRIP_DEFINERS', true),
+        'skip_on_error' => env('STREAM_BACKUP_RESTORE_SKIP_ON_ERROR', true),
         'skippable_error_codes' => [1227],
 
         // Tables excluded from restore to prevent the process from
@@ -276,7 +276,7 @@ return [
         // the backups table with stale data from the dump.
         // Set to [] to disable exclusion (e.g. when restoring into a
         // separate database where these tables don't matter).
-        'exclude_tables'        => ['backups', 'restores'],
+        'exclude_tables' => ['backups', 'restores'],
     ],
 
 ];

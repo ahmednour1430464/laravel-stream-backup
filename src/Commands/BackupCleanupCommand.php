@@ -17,9 +17,10 @@ class BackupCleanupCommand extends Command
     public function handle(): int
     {
         if ($this->option('sync')) {
-            dispatch_sync(new BackupCleanupJob());
-            dispatch_sync(new AbortStaleMultipartUploads());
+            dispatch_sync(new BackupCleanupJob);
+            dispatch_sync(new AbortStaleMultipartUploads);
             $this->info('Cleanup ran synchronously.');
+
             return self::SUCCESS;
         }
 
@@ -29,6 +30,7 @@ class BackupCleanupCommand extends Command
         BackupCleanupJob::dispatch()->onConnection($connection)->onQueue($queue);
         AbortStaleMultipartUploads::dispatch()->onConnection($connection)->onQueue($queue);
         $this->info('Cleanup jobs dispatched.');
+
         return self::SUCCESS;
     }
 }

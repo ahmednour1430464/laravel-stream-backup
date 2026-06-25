@@ -51,20 +51,23 @@ final class SodiumEncryptionStream implements BackupStream
      */
     private mixed $state;
 
-    private string $pending   = '';
-    private bool   $innerDone = false;
-    private bool   $eof       = false;
-    private bool   $closed    = false;
+    private string $pending = '';
+
+    private bool $innerDone = false;
+
+    private bool $eof = false;
+
+    private bool $closed = false;
 
     public function __construct(
         private readonly BackupStream $inner,
         private string $key, // mutable so sodium_memzero can wipe it
     ) {
         // init_push returns [0 => state, 1 => header (24 bytes)]
-        $result        = sodium_crypto_secretstream_xchacha20poly1305_init_push($key);
-        $this->state   = $result[0];
-        $header        = $result[1]; // 24-byte nonce header
-        $this->pending = self::VERSION . $header;
+        $result = sodium_crypto_secretstream_xchacha20poly1305_init_push($key);
+        $this->state = $result[0];
+        $header = $result[1]; // 24-byte nonce header
+        $this->pending = self::VERSION.$header;
     }
 
     public function read(int $length = 65536): ?string
@@ -75,14 +78,16 @@ final class SodiumEncryptionStream implements BackupStream
 
         // (A) Drain header bytes before any encryption work.
         if ($this->pending !== '') {
-            $out           = $this->pending;
+            $out = $this->pending;
             $this->pending = '';
+
             return $out;
         }
 
         // (B) We already emitted the TAG_FINAL chunk last call; signal EOF.
         if ($this->innerDone) {
             $this->eof = true;
+
             return null;
         }
 
@@ -97,13 +102,14 @@ final class SodiumEncryptionStream implements BackupStream
             // Emit the final encrypted chunk with TAG_FINAL so the decoder can
             // verify the stream ended legitimately (not truncated by a crash).
             $this->innerDone = true;
-            $ciphertext      = sodium_crypto_secretstream_xchacha20poly1305_push(
+            $ciphertext = sodium_crypto_secretstream_xchacha20poly1305_push(
                 $this->state,
                 '',
                 '',
                 SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_FINAL,
             );
-            return pack('N', strlen($ciphertext)) . $ciphertext;
+
+            return pack('N', strlen($ciphertext)).$ciphertext;
         }
 
         $ciphertext = sodium_crypto_secretstream_xchacha20poly1305_push(
@@ -113,7 +119,7 @@ final class SodiumEncryptionStream implements BackupStream
             SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_MESSAGE,
         );
 
-        return pack('N', strlen($ciphertext)) . $ciphertext;
+        return pack('N', strlen($ciphertext)).$ciphertext;
     }
 
     public function isEof(): bool
@@ -129,7 +135,9 @@ final class SodiumEncryptionStream implements BackupStream
         $this->closed = true;
 
         // Wipe the key from PHP memory first — before any potential exception.
-        sodium_memzero($this->key);
+        $key = $this->key;
+        $this->key = str_repeat("\x00", strlen($key));
+        sodium_memzero($key);
 
         $this->inner->close();
     }

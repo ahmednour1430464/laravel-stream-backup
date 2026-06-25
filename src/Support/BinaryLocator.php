@@ -19,11 +19,9 @@ final class BinaryLocator
     private array $cache = [];
 
     /**
-     * @param array<string, string|null> $configured map of binary name to configured absolute path
+     * @param  array<string, string|null>  $configured  map of binary name to configured absolute path
      */
-    public function __construct(private readonly array $configured = [])
-    {
-    }
+    public function __construct(private readonly array $configured = []) {}
 
     public function locate(string $name): string
     {
@@ -79,6 +77,7 @@ final class BinaryLocator
         }
 
         $path = trim($stdout);
+
         return $path !== '' ? $path : null;
     }
 

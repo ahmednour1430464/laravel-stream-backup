@@ -6,6 +6,4 @@ namespace Ahmednour\StreamBackup\Exceptions;
 
 use RuntimeException;
 
-class BackupFileNotFoundException extends RuntimeException
-{
-}
+class BackupFileNotFoundException extends RuntimeException {}

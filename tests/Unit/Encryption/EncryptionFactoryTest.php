@@ -11,7 +11,6 @@ use Ahmednour\StreamBackup\Encryption\NullEncryptionDriver;
 use Ahmednour\StreamBackup\Encryption\OpenSslAes256GcmDriver;
 use Ahmednour\StreamBackup\Encryption\SodiumDriver;
 use Ahmednour\StreamBackup\Exceptions\InvalidConfigException;
-use Closure;
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use PHPUnit\Framework\TestCase;
@@ -20,13 +19,13 @@ final class EncryptionFactoryTest extends TestCase
 {
     private function makeFactory(string $driver = 'none'): EncryptionFactory
     {
-        $app    = new Container();
+        $app = new Container;
         $config = new Repository(['stream-backup' => ['encryption' => ['driver' => $driver]]]);
 
         // Register bindings for built-in drivers
-        $app->bind(NullEncryptionDriver::class, fn() => new NullEncryptionDriver());
-        $app->bind(OpenSslAes256GcmDriver::class, fn() => new OpenSslAes256GcmDriver());
-        $app->bind(SodiumDriver::class, fn() => new SodiumDriver());
+        $app->bind(NullEncryptionDriver::class, fn () => new NullEncryptionDriver);
+        $app->bind(OpenSslAes256GcmDriver::class, fn () => new OpenSslAes256GcmDriver);
+        $app->bind(SodiumDriver::class, fn () => new SodiumDriver);
 
         return new EncryptionFactory($app, $config);
     }
@@ -69,14 +68,30 @@ final class EncryptionFactoryTest extends TestCase
     {
         $factory = $this->makeFactory('none');
 
-        $customDriver = new class implements EncryptionDriver {
-            public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
-            public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
-            public function name(): string { return 'custom'; }
-            public function keyLength(): int { return 0; }
+        $customDriver = new class implements EncryptionDriver
+        {
+            public function spawn(BackupStream $inner, string $key): BackupStream
+            {
+                return $inner;
+            }
+
+            public function spawnDecrypt(BackupStream $inner, string $key): BackupStream
+            {
+                return $inner;
+            }
+
+            public function name(): string
+            {
+                return 'custom';
+            }
+
+            public function keyLength(): int
+            {
+                return 0;
+            }
         };
 
-        $factory->extend('custom', fn() => $customDriver);
+        $factory->extend('custom', fn () => $customDriver);
 
         $resolved = $factory->make('custom');
         self::assertSame($customDriver, $resolved);
@@ -86,14 +101,30 @@ final class EncryptionFactoryTest extends TestCase
     {
         $factory = $this->makeFactory('none');
 
-        $override = new class implements EncryptionDriver {
-            public function spawn(BackupStream $inner, string $key): BackupStream { return $inner; }
-            public function spawnDecrypt(BackupStream $inner, string $key): BackupStream { return $inner; }
-            public function name(): string { return 'none'; }
-            public function keyLength(): int { return 0; }
+        $override = new class implements EncryptionDriver
+        {
+            public function spawn(BackupStream $inner, string $key): BackupStream
+            {
+                return $inner;
+            }
+
+            public function spawnDecrypt(BackupStream $inner, string $key): BackupStream
+            {
+                return $inner;
+            }
+
+            public function name(): string
+            {
+                return 'none';
+            }
+
+            public function keyLength(): int
+            {
+                return 0;
+            }
         };
 
-        $factory->extend('none', fn() => $override);
+        $factory->extend('none', fn () => $override);
 
         $resolved = $factory->make('none');
         self::assertSame($override, $resolved);

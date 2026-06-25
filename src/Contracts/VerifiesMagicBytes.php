@@ -20,8 +20,9 @@ interface VerifiesMagicBytes
     /**
      * Verify the magic bytes of the uploaded backup.
      *
-     * @param string $magic The first magicBytesLength() bytes of the object.
-     * @param Backup $backup The backup model being verified.
+     * @param  string  $magic  The first magicBytesLength() bytes of the object.
+     * @param  Backup  $backup  The backup model being verified.
+     *
      * @throws \RuntimeException If the magic bytes are invalid.
      */
     public function verifyMagicBytes(string $magic, Backup $backup): void;

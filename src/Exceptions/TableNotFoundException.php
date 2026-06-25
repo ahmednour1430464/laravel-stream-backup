@@ -6,6 +6,4 @@ namespace Ahmednour\StreamBackup\Exceptions;
 
 use RuntimeException;
 
-class TableNotFoundException extends RuntimeException
-{
-}
+class TableNotFoundException extends RuntimeException {}

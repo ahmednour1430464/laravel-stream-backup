@@ -12,8 +12,9 @@ use Ahmednour\StreamBackup\DTOs\BackupMetadata;
  */
 abstract class WriteSession
 {
-    private int $totalBytes  = 0;
-    private int $partCount   = 0;
+    private int $totalBytes = 0;
+
+    private int $partCount = 0;
 
     public function __construct(
         public readonly BackupMetadata $metadata,
@@ -25,6 +26,13 @@ abstract class WriteSession
         $this->partCount++;
     }
 
-    public function totalBytes(): int  { return $this->totalBytes; }
-    public function partCount(): int   { return $this->partCount; }
+    public function totalBytes(): int
+    {
+        return $this->totalBytes;
+    }
+
+    public function partCount(): int
+    {
+        return $this->partCount;
+    }
 }

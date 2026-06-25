@@ -14,6 +14,8 @@ class SQLiteDumperTest extends TestCase
 {
     private function makeDumper(): SQLiteDumper
     {
+        \assert($this->app !== null);
+
         return $this->app->make(SQLiteDumper::class);
     }
 
@@ -39,15 +41,15 @@ class SQLiteDumperTest extends TestCase
         file_put_contents($tempDb, '');
 
         config()->set('database.connections.sqlite_test', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => $tempDb,
         ]);
 
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'sqlite_test',
-            disk:           'spaces',
+            disk: 'spaces',
         );
 
         $dumper = $this->makeDumper();
@@ -65,15 +67,15 @@ class SQLiteDumperTest extends TestCase
     public function test_throws_when_database_file_not_found(): void
     {
         config()->set('database.connections.sqlite_missing', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => '/nonexistent/path/to/database.sqlite',
         ]);
 
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'sqlite_missing',
-            disk:           'spaces',
+            disk: 'spaces',
         );
 
         $dumper = $this->makeDumper();
@@ -89,15 +91,15 @@ class SQLiteDumperTest extends TestCase
     public function test_throws_when_no_database_path_configured(): void
     {
         config()->set('database.connections.sqlite_empty', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => '',
         ]);
 
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'sqlite_empty',
-            disk:           'spaces',
+            disk: 'spaces',
         );
 
         $dumper = $this->makeDumper();
@@ -116,15 +118,15 @@ class SQLiteDumperTest extends TestCase
         file_put_contents($tempDb, '');
 
         config()->set('database.connections.sqlite_flags', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => $tempDb,
         ]);
 
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'sqlite_flags',
-            disk:           'spaces',
+            disk: 'spaces',
             extraDumpFlags: ['-bail'],
         );
 
@@ -147,10 +149,10 @@ class SQLiteDumperTest extends TestCase
         $method->setAccessible(true);
 
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'sqlite_test',
-            disk:           'spaces',
+            disk: 'spaces',
         );
 
         $result = $method->invoke($dumper, $context);

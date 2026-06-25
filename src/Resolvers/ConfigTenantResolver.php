@@ -15,14 +15,12 @@ use Illuminate\Contracts\Config\Repository as Config;
  */
 final class ConfigTenantResolver implements TenantResolver
 {
-    public function __construct(private readonly Config $config)
-    {
-    }
+    public function __construct(private readonly Config $config) {}
 
     public function resolve(): iterable
     {
         $tenants = (array) $this->config->get('stream-backup.tenants', []);
-        $disk    = (string) $this->config->get('stream-backup.default_disk', 'spaces');
+        $disk = (string) $this->config->get('stream-backup.default_disk', 'spaces');
 
         foreach ($tenants as $tenant) {
             $connection = (string) ($tenant['connection'] ?? '');
@@ -34,13 +32,13 @@ final class ConfigTenantResolver implements TenantResolver
                 ?? $this->config->get("database.connections.{$connection}.database", $connection));
 
             yield new BackupContext(
-                tenantId:       $tenant['tenant_id'] ?? null,
-                databaseName:   $database,
+                tenantId: $tenant['tenant_id'] ?? null,
+                databaseName: $database,
                 connectionName: $connection,
-                disk:           (string) ($tenant['disk'] ?? $disk),
+                disk: (string) ($tenant['disk'] ?? $disk),
                 timeoutSeconds: (int) ($tenant['timeout'] ?? 0),
                 extraDumpFlags: (array) ($tenant['extra_dump_flags'] ?? []),
-                driver:         $tenant['driver'] ?? null,
+                driver: $tenant['driver'] ?? null,
             );
         }
     }

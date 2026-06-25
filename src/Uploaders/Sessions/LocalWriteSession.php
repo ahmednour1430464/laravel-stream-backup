@@ -10,9 +10,9 @@ final class LocalWriteSession extends WriteSession
 {
     /** @param resource $handle */
     public function __construct(
-        public readonly mixed  $handle,     // local-only: open fopen handle
+        public readonly mixed $handle,     // local-only: open fopen handle
         public readonly string $localPath,
-        BackupMetadata         $metadata,
+        BackupMetadata $metadata,
     ) {
         parent::__construct($metadata);
     }

@@ -27,8 +27,11 @@ use Illuminate\Support\Facades\Log;
 final class TableRestorer
 {
     private readonly DefinerStripper $definerStripper;
+
     private readonly StatementFilter $statementFilter;
+
     private readonly bool $stripDefiners;
+
     private readonly bool $skipOnError;
 
     /** @var array<int, int> */
@@ -38,28 +41,27 @@ final class TableRestorer
 
     public function __construct(Config $config)
     {
-        $this->definerStripper = new DefinerStripper();
-        $this->statementFilter = new StatementFilter();
-        $this->stripDefiners   = (bool) $config->get('stream-backup.restore.strip_definers', true);
-        $this->skipOnError     = (bool) $config->get('stream-backup.restore.skip_on_error', true);
-        $this->skippableCodes  = array_map('intval', (array) $config->get('stream-backup.restore.skippable_error_codes', [1227]));
+        $this->definerStripper = new DefinerStripper;
+        $this->statementFilter = new StatementFilter;
+        $this->stripDefiners = (bool) $config->get('stream-backup.restore.strip_definers', true);
+        $this->skipOnError = (bool) $config->get('stream-backup.restore.skip_on_error', true);
+        $this->skippableCodes = array_map('intval', (array) $config->get('stream-backup.restore.skippable_error_codes', [1227]));
     }
 
     /**
      * Restore the given table blocks into the target database.
      *
-     * @param array<string, resource> $tableBlocks Map of table_name => php://temp stream
-     * @param string                  $connection  Laravel DB connection name
-     * @return RestoreResult
+     * @param  array<string, resource>  $tableBlocks  Map of table_name => php://temp stream
+     * @param  string  $connection  Laravel DB connection name
      *
      * @throws RestoreFailedException If any SQL execution fails
      */
     public function restore(array $tableBlocks, string $connection, float $startTime): RestoreResult
     {
         $db = DB::connection($connection);
-        $totalRows      = 0;
+        $totalRows = 0;
         $tablesRestored = [];
-        $currentTable   = null;
+        $currentTable = null;
         $this->skippedCount = 0;
 
         try {
@@ -122,14 +124,15 @@ final class TableRestorer
 
         $duration = microtime(true) - $startTime;
 
+        // @phpstan-ignore-next-line — skippedCount is mutated by executeStatement() as a side effect
         if ($this->skippedCount > 0) {
             Log::warning("[Restore] Completed with {$this->skippedCount} skipped statement(s) due to skippable errors.");
         }
 
         return new RestoreResult(
-            tablesRestored:    $tablesRestored,
+            tablesRestored: $tablesRestored,
             totalRowsAffected: $totalRows,
-            durationSeconds:   $duration,
+            durationSeconds: $duration,
             skippedStatements: $this->skippedCount,
         );
     }
@@ -140,9 +143,7 @@ final class TableRestorer
      * Reads the buffer line-by-line, accumulating multi-line statements
      * (delimited by `;`), and executes each complete statement.
      *
-     * @param ConnectionInterface $db
-     * @param resource           $buffer
-     * @param string             $tableName
+     * @param  resource  $buffer
      * @return int Rows affected
      */
     private function executeBuffer(ConnectionInterface $db, $buffer, string $tableName): int
@@ -186,9 +187,6 @@ final class TableRestorer
      * Execute a single SQL statement, applying DEFINER stripping and the
      * configurable skip-on-error safety net.
      *
-     * @param ConnectionInterface $db
-     * @param string              $statement
-     * @param string              $tableName
      * @return int Rows affected
      */
     private function executeStatement(ConnectionInterface $db, string $statement, string $tableName): int

@@ -15,21 +15,19 @@ use Illuminate\Contracts\Config\Repository as Config;
  */
 final class SingleDatabaseResolver implements TenantResolver
 {
-    public function __construct(private readonly Config $config)
-    {
-    }
+    public function __construct(private readonly Config $config) {}
 
     public function resolve(): iterable
     {
         $connection = (string) $this->config->get('database.default', 'mysql');
-        $database   = (string) $this->config->get("database.connections.{$connection}.database", $connection);
-        $disk       = (string) $this->config->get('stream-backup.default_disk', 'spaces');
+        $database = (string) $this->config->get("database.connections.{$connection}.database", $connection);
+        $disk = (string) $this->config->get('stream-backup.default_disk', 'spaces');
 
         yield new BackupContext(
-            tenantId:       null,
-            databaseName:   $database,
+            tenantId: null,
+            databaseName: $database,
             connectionName: $connection,
-            disk:           $disk,
+            disk: $disk,
         );
     }
 }

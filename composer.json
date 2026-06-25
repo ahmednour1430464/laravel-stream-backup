@@ -38,6 +38,8 @@
     },
     "require-dev": {
         "illuminate/contracts": "10.*",
+        "larastan/larastan": "^2.0 || ^3.0",
+        "laravel/pint": "^1.0",
         "orchestra/testbench": "8.*",
         "phpunit/phpunit": "^10.0 || ^11.0 || ^12.0"
     },
@@ -51,6 +53,11 @@
             "Ahmednour\\StreamBackup\\Tests\\": "tests/"
         }
     },
+    "scripts": {
+        "analyse": "phpstan analyse --memory-limit=2G",
+        "lint": "pint",
+        "lint:test": "pint --test"
+    },
     "extra": {
         "laravel": {
             "providers": [
@@ -60,6 +67,9 @@
     },
     "config": {
         "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        },
         "policy": {
             "advisories": {
                 "ignore-id": [

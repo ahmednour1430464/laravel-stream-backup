@@ -35,9 +35,9 @@ final class ProcessBackupStream implements BackupStream
     private bool $closed = false;
 
     /**
-     * @param resource      $process proc_open handle
-     * @param resource      $stdout  pipe 1 (already set non-blocking)
-     * @param resource|null $stderr  pipe 2 (already set non-blocking), may be null if not captured
+     * @param  resource  $process  proc_open handle
+     * @param  resource  $stdout  pipe 1 (already set non-blocking)
+     * @param  resource|null  $stderr  pipe 2 (already set non-blocking), may be null if not captured
      */
     public function __construct(
         $process,
@@ -46,8 +46,8 @@ final class ProcessBackupStream implements BackupStream
         private readonly string $label = 'process',
     ) {
         $this->process = $process;
-        $this->stdout  = $stdout;
-        $this->stderr  = $stderr;
+        $this->stdout = $stdout;
+        $this->stderr = $stderr;
     }
 
     public function read(int $length = 65536): ?string
@@ -58,7 +58,7 @@ final class ProcessBackupStream implements BackupStream
             return null;
         }
 
-        $data = @fread($this->stdout, $length);
+        $data = @fread($this->stdout, max(1, $length));
 
         if ($data === false) {
             return '';
@@ -66,6 +66,7 @@ final class ProcessBackupStream implements BackupStream
 
         if ($data === '' && feof($this->stdout)) {
             $this->eof = true;
+
             return null;
         }
 
@@ -154,6 +155,7 @@ final class ProcessBackupStream implements BackupStream
 
         if ($status['running']) {
             proc_terminate($this->process);
+
             return -1;
         }
 

@@ -13,8 +13,7 @@ final class UploadResult
         public readonly int $partCount,
         public readonly float $durationSeconds,
         public readonly string $checksum,
-    ) {
-    }
+    ) {}
 
     public function speedMbps(): float
     {

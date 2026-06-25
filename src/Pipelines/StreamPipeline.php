@@ -55,13 +55,12 @@ final class StreamPipeline
         private readonly EncryptionKeyResolver $keyResolver,
         private readonly UploadDriver $uploader,
         private readonly Config $config,
-    ) {
-    }
+    ) {}
 
     public function run(BackupContext $context, BackupMetadata $metadata): UploadResult
     {
         $readChunk = (int) $this->config->get('stream-backup.read_chunk', 64 * 1024);
-        $partSize  = (int) $this->config->get('stream-backup.multipart.part_size', 32 * 1024 * 1024);
+        $partSize = (int) $this->config->get('stream-backup.multipart.part_size', 32 * 1024 * 1024);
 
         // 1. Resolve the correct dumper for this context's driver.
         $dumper = $this->dumperFactory->make($context->driver);
@@ -74,7 +73,7 @@ final class StreamPipeline
             );
         }
         $pipes = $dumpStream->pipes();
-        $dumpProc   = $pipes->process;
+        $dumpProc = $pipes->process;
         $dumpStdout = $pipes->stdout;
 
         // 3. Start the compressor.
@@ -85,9 +84,9 @@ final class StreamPipeline
         //    (no-op when driver = 'none'); then tee through a ChecksumStream so
         //    the SHA-256 is computed over the final ciphertext during upload.
         $pigzBackupStream = new ProcessBackupStream($pigzProc, $pigzStdout, $pigzStderr, $this->compression->name());
-        $encryption       = $this->encryptionFactory->make();
-        $key              = $this->keyResolver->resolve($encryption);
-        $encryptedStream  = $encryption->spawn($pigzBackupStream, $key);
+        $encryption = $this->encryptionFactory->make();
+        $key = $this->keyResolver->resolve($encryption);
+        $encryptedStream = $encryption->spawn($pigzBackupStream, $key);
         $compressedStream = new ChecksumStream($encryptedStream);
 
         // 5. Initiate the multipart upload (persists UploadId to the backups row).
@@ -95,20 +94,23 @@ final class StreamPipeline
 
         // 6. Allocate the streaming part buffer once.
         $partBuffer = fopen('php://temp', 'r+b');
+        if ($partBuffer === false) {
+            throw new PipelineException('Failed to open php://temp stream for part buffer.');
+        }
         $bufferSize = 0;
         $partNumber = 1;
 
         // 7. Pipeline state.
-        $pendingChunk    = '';    // bytes waiting to be written into compressor stdin
-        $dumpDone        = false; // dump stdout closed
+        $pendingChunk = '';    // bytes waiting to be written into compressor stdin
+        $dumpDone = false; // dump stdout closed
         $pigzInputClosed = false; // compressor stdin closed (EOF signalled)
-        $pigzDone        = false; // compressor stdout closed
+        $pigzDone = false; // compressor stdout closed
 
         $startedAt = microtime(true);
 
         try {
             while (true) {
-                $read  = [];
+                $read = [];
                 $write = [];
                 $except = null;
 
@@ -134,7 +136,7 @@ final class StreamPipeline
                 if ($changed === false) {
                     // EINTR from signal handlers is normal; retry.
                     $err = error_get_last();
-                    if ($err !== null && isset($err['message']) && str_contains($err['message'], 'Interrupted system call')) {
+                    if ($err !== null && str_contains($err['message'], 'Interrupted system call')) {
                         continue;
                     }
                     throw new PipelineException('stream_select failed.');
@@ -202,15 +204,15 @@ final class StreamPipeline
             CompressionCompleted::dispatch($context);
 
             $result = $this->uploader->complete($session);
-            
+
             $duration = microtime(true) - $startedAt;
             $uploadResult = new UploadResult(
-                bucket:          $result->bucket,
-                key:             $result->key,
-                sizeBytes:       $result->sizeBytes,
-                partCount:       $result->partCount,
+                bucket: $result->bucket,
+                key: $result->key,
+                sizeBytes: $result->sizeBytes,
+                partCount: $result->partCount,
                 durationSeconds: $duration,
-                checksum:        $compressedStream->checksum(),
+                checksum: $compressedStream->checksum(),
             );
 
             UploadFinished::dispatch($context, $uploadResult);
@@ -236,7 +238,7 @@ final class StreamPipeline
     }
 
     /**
-     * @param resource $buffer
+     * @param  resource  $buffer
      */
     private function flushPart(WriteSession $session, $buffer, int $size, int $partNumber): void
     {
@@ -274,7 +276,7 @@ final class StreamPipeline
     }
 
     /**
-     * @param resource|null $proc
+     * @param  resource|null  $proc
      */
     private function killProcess($proc): void
     {
@@ -285,7 +287,7 @@ final class StreamPipeline
     }
 
     /**
-     * @param mixed $handle
+     * @param  mixed  $handle
      */
     private function closeIfOpen($handle): void
     {

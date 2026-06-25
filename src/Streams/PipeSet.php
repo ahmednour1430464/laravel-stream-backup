@@ -14,14 +14,13 @@ namespace Ahmednour\StreamBackup\Streams;
 final class PipeSet
 {
     /**
-     * @param resource $process  proc_open() handle
-     * @param resource $stdout   pipe 1 (non-blocking)
-     * @param resource $stderr   pipe 2 (non-blocking)
+     * @param  resource  $process  proc_open() handle
+     * @param  resource  $stdout  pipe 1 (non-blocking)
+     * @param  resource|null  $stderr  pipe 2 (non-blocking), may be null if not captured
      */
     public function __construct(
         public readonly mixed $process,
         public readonly mixed $stdout,
         public readonly mixed $stderr,
-    ) {
-    }
+    ) {}
 }

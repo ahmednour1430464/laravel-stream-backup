@@ -88,7 +88,7 @@ final class SodiumDriver implements EncryptionDriver, VerifiesMagicBytes
     {
         if (strlen($key) !== $this->keyLength()) {
             throw new InvalidConfigException(sprintf(
-                'Encryption driver "%s" requires a %d-byte key; got %d bytes. ' .
+                'Encryption driver "%s" requires a %d-byte key; got %d bytes. '.
                 'Generate a valid key: php -r "echo base64_encode(random_bytes(%d));"',
                 $this->name(),
                 $this->keyLength(),

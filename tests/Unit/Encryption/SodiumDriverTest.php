@@ -25,10 +25,15 @@ final class SodiumFixedChunkStream implements BackupStream
         if ($this->offset >= count($this->chunks)) {
             return null;
         }
+
         return $this->chunks[$this->offset++];
     }
 
-    public function isEof(): bool { return $this->offset >= count($this->chunks); }
+    public function isEof(): bool
+    {
+        return $this->offset >= count($this->chunks);
+    }
+
     public function close(): void {}
 }
 
@@ -43,22 +48,25 @@ function sodiumDecrypt(string $ciphertext, string $key): string
     $version = ord($ciphertext[$pos++]);
     assert($version === 0x02, "Expected version 0x02, got {$version}");
 
-    $header  = substr($ciphertext, $pos, SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES);
-    $pos    += SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES;
+    $header = substr($ciphertext, $pos, SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES);
+    $pos += SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES;
 
     $state = sodium_crypto_secretstream_xchacha20poly1305_init_pull($header, $key);
 
     $plaintext = '';
 
     while ($pos < strlen($ciphertext)) {
-        $len  = unpack('N', substr($ciphertext, $pos, 4))[1];
+        $lenUnpacked = unpack('N', substr($ciphertext, $pos, 4));
+        \assert(\is_array($lenUnpacked));
+        $len = $lenUnpacked[1];
         $pos += 4;
 
-        $chunk  = substr($ciphertext, $pos, $len);
-        $pos   += $len;
+        $chunk = substr($ciphertext, $pos, $len);
+        $pos += $len;
 
-        [$plain, $tag] = sodium_crypto_secretstream_xchacha20poly1305_pull($state, $chunk);
-        assert($plain !== false, 'sodium_crypto_secretstream_xchacha20poly1305_pull failed');
+        $pullResult = sodium_crypto_secretstream_xchacha20poly1305_pull($state, $chunk);
+        \assert(\is_array($pullResult), 'sodium_crypto_secretstream_xchacha20poly1305_pull failed');
+        [$plain, $tag] = $pullResult;
 
         $plaintext .= $plain;
 
@@ -88,21 +96,21 @@ final class SodiumDriverTest extends TestCase
 
     public function test_name_returns_sodium(): void
     {
-        self::assertSame('sodium', (new SodiumDriver())->name());
+        self::assertSame('sodium', (new SodiumDriver)->name());
     }
 
     public function test_key_length_returns_32(): void
     {
         self::assertSame(
             SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_KEYBYTES,
-            (new SodiumDriver())->keyLength()
+            (new SodiumDriver)->keyLength()
         );
     }
 
     public function test_spawn_returns_sodium_encryption_stream(): void
     {
-        $inner  = new SodiumFixedChunkStream(['hello']);
-        $stream = (new SodiumDriver())->spawn($inner, $this->validKey());
+        $inner = new SodiumFixedChunkStream(['hello']);
+        $stream = (new SodiumDriver)->spawn($inner, $this->validKey());
         self::assertInstanceOf(SodiumEncryptionStream::class, $stream);
     }
 
@@ -111,16 +119,16 @@ final class SodiumDriverTest extends TestCase
         $this->expectException(InvalidConfigException::class);
         $this->expectExceptionMessageMatches('/requires a 32-byte key/');
 
-        (new SodiumDriver())->spawn(new SodiumFixedChunkStream([]), random_bytes(16));
+        (new SodiumDriver)->spawn(new SodiumFixedChunkStream([]), random_bytes(16));
     }
 
     // ---- Round-trip correctness ----
 
     public function test_round_trip_single_chunk(): void
     {
-        $key       = $this->validKey();
+        $key = $this->validKey();
         $plaintext = 'hello sodium world!';
-        $stream    = (new SodiumDriver())->spawn(new SodiumFixedChunkStream([$plaintext]), $key);
+        $stream = (new SodiumDriver)->spawn(new SodiumFixedChunkStream([$plaintext]), $key);
 
         $encrypted = $this->drainStream($stream);
         $stream->close();
@@ -131,9 +139,9 @@ final class SodiumDriverTest extends TestCase
 
     public function test_round_trip_multiple_chunks(): void
     {
-        $key    = $this->validKey();
+        $key = $this->validKey();
         $chunks = ['alpha', 'beta', 'gamma'];
-        $stream = (new SodiumDriver())->spawn(new SodiumFixedChunkStream($chunks), $key);
+        $stream = (new SodiumDriver)->spawn(new SodiumFixedChunkStream($chunks), $key);
 
         $encrypted = $this->drainStream($stream);
         $stream->close();
@@ -143,8 +151,8 @@ final class SodiumDriverTest extends TestCase
 
     public function test_file_header_version_byte_is_0x02(): void
     {
-        $key    = $this->validKey();
-        $stream = (new SodiumDriver())->spawn(new SodiumFixedChunkStream(['x']), $key);
+        $key = $this->validKey();
+        $stream = (new SodiumDriver)->spawn(new SodiumFixedChunkStream(['x']), $key);
 
         $output = $this->drainStream($stream);
         $stream->close();
@@ -154,47 +162,49 @@ final class SodiumDriverTest extends TestCase
 
     public function test_two_encryptions_produce_different_ciphertexts(): void
     {
-        $key  = $this->validKey();
+        $key = $this->validKey();
         $data = 'same plaintext';
 
-        $enc1 = $this->drainStream((new SodiumDriver())->spawn(new SodiumFixedChunkStream([$data]), $key));
-        $enc2 = $this->drainStream((new SodiumDriver())->spawn(new SodiumFixedChunkStream([$data]), $key));
+        $enc1 = $this->drainStream((new SodiumDriver)->spawn(new SodiumFixedChunkStream([$data]), $key));
+        $enc2 = $this->drainStream((new SodiumDriver)->spawn(new SodiumFixedChunkStream([$data]), $key));
 
         self::assertNotSame($enc1, $enc2, 'Each backup must use a different random header (different ciphertext).');
     }
 
     public function test_tampered_ciphertext_fails_pull(): void
     {
-        $key    = $this->validKey();
-        $stream = (new SodiumDriver())->spawn(new SodiumFixedChunkStream(['secret']), $key);
+        $key = $this->validKey();
+        $stream = (new SodiumDriver)->spawn(new SodiumFixedChunkStream(['secret']), $key);
 
         $output = $this->drainStream($stream);
         $stream->close();
 
         // Flip a bit deep in the ciphertext region
         $headerSize = 1 + SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES;
-        $flipAt     = $headerSize + 4 + 5; // skip version+header+length, then flip byte 5 of first chunk
+        $flipAt = $headerSize + 4 + 5; // skip version+header+length, then flip byte 5 of first chunk
 
-        $tampered        = $output;
+        $tampered = $output;
         $tampered[$flipAt] = chr(ord($tampered[$flipAt]) ^ 0xFF);
 
         // sodium_pull returns false (not an exception) on authentication failure
-        $pos     = 1; // skip version byte
-        $header  = substr($tampered, $pos, SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES);
-        $pos    += SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES;
-        $state   = sodium_crypto_secretstream_xchacha20poly1305_init_pull($header, $key);
-        $len     = unpack('N', substr($tampered, $pos, 4))[1]; $pos += 4;
-        $chunk   = substr($tampered, $pos, $len);
+        $pos = 1; // skip version byte
+        $header = substr($tampered, $pos, SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES);
+        $pos += SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES;
+        $state = sodium_crypto_secretstream_xchacha20poly1305_init_pull($header, $key);
+        $tamperedLen = unpack('N', substr($tampered, $pos, 4));
+        \assert(\is_array($tamperedLen));
+        $len = $tamperedLen[1];
+        $pos += 4;
+        $chunk = substr($tampered, $pos, $len);
 
         $result = sodium_crypto_secretstream_xchacha20poly1305_pull($state, $chunk);
         self::assertFalse($result, 'Tampered ciphertext must return false from sodium_pull (auth failure).');
     }
 
-
     public function test_empty_stream_produces_header_and_final_chunk_only(): void
     {
-        $key    = $this->validKey();
-        $stream = (new SodiumDriver())->spawn(new SodiumFixedChunkStream([]), $key);
+        $key = $this->validKey();
+        $stream = (new SodiumDriver)->spawn(new SodiumFixedChunkStream([]), $key);
 
         $output = $this->drainStream($stream);
         $stream->close();
@@ -214,6 +224,7 @@ final class SodiumDriverTest extends TestCase
         while (($chunk = $stream->read(128)) !== null) {
             $buffer .= $chunk;
         }
+
         return $buffer;
     }
 }

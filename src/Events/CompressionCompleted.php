@@ -13,6 +13,5 @@ class CompressionCompleted
 
     public function __construct(
         public readonly BackupContext $context
-    ) {
-    }
+    ) {}
 }

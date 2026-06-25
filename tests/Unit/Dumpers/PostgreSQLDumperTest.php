@@ -6,6 +6,7 @@ namespace Ahmednour\StreamBackup\Tests\Unit\Dumpers;
 
 use Ahmednour\StreamBackup\DTOs\BackupContext;
 use Ahmednour\StreamBackup\Dumpers\PostgreSQLDumper;
+use Ahmednour\StreamBackup\Exceptions\PipelineException;
 use Ahmednour\StreamBackup\Tests\TestCase;
 use ReflectionMethod;
 
@@ -13,16 +14,18 @@ class PostgreSQLDumperTest extends TestCase
 {
     private function makeDumper(): PostgreSQLDumper
     {
+        \assert($this->app !== null);
+
         return $this->app->make(PostgreSQLDumper::class);
     }
 
     private function makeContext(): BackupContext
     {
         return new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'pgsql',
-            disk:           'spaces',
+            disk: 'spaces',
         );
     }
 
@@ -31,9 +34,9 @@ class PostgreSQLDumperTest extends TestCase
         parent::setUp();
 
         config()->set('database.connections.pgsql', [
-            'driver'   => 'pgsql',
-            'host'     => '127.0.0.1',
-            'port'     => 5432,
+            'driver' => 'pgsql',
+            'host' => '127.0.0.1',
+            'port' => 5432,
             'database' => 'test_db',
             'username' => 'pguser',
             'password' => 's3cret_pa$$word',
@@ -52,7 +55,7 @@ class PostgreSQLDumperTest extends TestCase
 
     public function test_build_command_contains_correct_args(): void
     {
-        $dumper  = $this->makeDumper();
+        $dumper = $this->makeDumper();
         $context = $this->makeContext();
 
         $method = new ReflectionMethod($dumper, 'buildCommand');
@@ -75,7 +78,7 @@ class PostgreSQLDumperTest extends TestCase
 
     public function test_password_not_in_command_array(): void
     {
-        $dumper  = $this->makeDumper();
+        $dumper = $this->makeDumper();
         $context = $this->makeContext();
 
         $method = new ReflectionMethod($dumper, 'buildCommand');
@@ -88,7 +91,7 @@ class PostgreSQLDumperTest extends TestCase
 
     public function test_build_environment_contains_pgpassword(): void
     {
-        $dumper  = $this->makeDumper();
+        $dumper = $this->makeDumper();
         $context = $this->makeContext();
 
         $method = new ReflectionMethod($dumper, 'buildEnvironment');
@@ -103,10 +106,10 @@ class PostgreSQLDumperTest extends TestCase
     public function test_extra_dump_flags_are_appended(): void
     {
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'pgsql',
-            disk:           'spaces',
+            disk: 'spaces',
             extraDumpFlags: ['--verbose', '--no-owner'],
         );
 
@@ -125,15 +128,15 @@ class PostgreSQLDumperTest extends TestCase
         config()->set('database.connections.nonexistent', null);
 
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'test_db',
+            tenantId: null,
+            databaseName: 'test_db',
             connectionName: 'nonexistent',
-            disk:           'spaces',
+            disk: 'spaces',
         );
 
         $dumper = $this->makeDumper();
 
-        $this->expectException(\Ahmednour\StreamBackup\Exceptions\PipelineException::class);
+        $this->expectException(PipelineException::class);
         $this->expectExceptionMessage("'nonexistent' is not configured");
 
         $method = new ReflectionMethod($dumper, 'buildCommand');

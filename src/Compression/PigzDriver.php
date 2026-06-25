@@ -12,13 +12,12 @@ final class PigzDriver implements CompressionDriver
     public function __construct(
         private readonly BinaryLocator $locator,
         private readonly int $level = 4,
-    ) {
-    }
+    ) {}
 
     public function buildCommand(): array
     {
         $binary = $this->locator->locate('pigz');
-        $level  = max(1, min(9, $this->level));
+        $level = max(1, min(9, $this->level));
 
         return [$binary, "-{$level}", '-c'];
     }

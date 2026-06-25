@@ -58,13 +58,13 @@ final class LocalDownloadDriver implements DownloadDriver
 
         // Ensure the resolved path stays within the root directory to prevent
         // directory traversal attacks via crafted backup paths.
-        $resolved = $this->root !== '' ? rtrim($this->root, '/') . '/' . $path : $path;
+        $resolved = $this->root !== '' ? rtrim($this->root, '/').'/'.$path : $path;
         $realRoot = $this->root !== '' ? realpath($this->root) : null;
         $realResolved = realpath(dirname($resolved));
 
-        if ($realRoot !== null && $realResolved !== false) {
-            $normalizedRoot = rtrim($realRoot, '/') . '/';
-            $normalizedResolved = rtrim($realResolved, '/') . '/';
+        if (is_string($realRoot) && $realResolved !== false) {
+            $normalizedRoot = rtrim($realRoot, '/').'/';
+            $normalizedResolved = rtrim($realResolved, '/').'/';
 
             if (! str_starts_with($normalizedResolved, $normalizedRoot)) {
                 throw new PipelineException(

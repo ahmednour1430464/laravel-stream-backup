@@ -58,6 +58,7 @@ final class ChecksumStream implements BackupStream
         if ($this->finalDigest === null) {
             $this->finalDigest = hash_final($this->hash);
         }
+
         return $this->finalDigest;
     }
 }

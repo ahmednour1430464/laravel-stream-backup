@@ -6,7 +6,7 @@ namespace Ahmednour\StreamBackup\Enums;
 
 enum RetentionTier: string
 {
-    case Daily   = 'daily';
-    case Weekly  = 'weekly';
+    case Daily = 'daily';
+    case Weekly = 'weekly';
     case Monthly = 'monthly';
 }

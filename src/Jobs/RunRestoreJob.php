@@ -46,11 +46,10 @@ class RunRestoreJob implements ShouldQueue
     public int $timeout = 0;
 
     private ?Restore $restoreRecord = null;
+
     private bool $receivedSigterm = false;
 
-    public function __construct(public RestoreContext $context)
-    {
-    }
+    public function __construct(public RestoreContext $context) {}
 
     public function handle(RestorePipeline $pipeline): void
     {
@@ -62,15 +61,17 @@ class RunRestoreJob implements ShouldQueue
 
         Log::debug("[Restore] Attempting to acquire lock: {$lockName}");
         if (! $lock->get()) {
-            Log::debug("[Restore] Could not acquire lock, releasing job back to queue (delay 60s).");
+            Log::debug('[Restore] Could not acquire lock, releasing job back to queue (delay 60s).');
             $this->release(60);
+
             return;
         }
         Log::debug("[Restore] Lock acquired: {$lockName}");
 
         try {
             if ($this->receivedSigterm) {
-                Log::debug("[Restore] Job aborted due to SIGTERM before processing.");
+                Log::debug('[Restore] Job aborted due to SIGTERM before processing.');
+
                 return;
             }
 
@@ -84,16 +85,16 @@ class RunRestoreJob implements ShouldQueue
             if ($backup->status !== BackupStatus::Completed) {
                 throw new \InvalidArgumentException("Backup ID {$this->context->backupId} is not completed (status: {$backup->status->value}).");
             }
-            Log::debug("[Restore] Backup found and is completed.");
+            Log::debug('[Restore] Backup found and is completed.');
 
             $this->restoreRecord = Restore::create([
-                'backup_id'        => $backup->id,
-                'tenant_id'        => $this->context->tenantId,
-                'database_name'    => $this->context->databaseName,
-                'connection_name'  => $this->context->connectionName,
+                'backup_id' => $backup->id,
+                'tenant_id' => $this->context->tenantId,
+                'database_name' => $this->context->databaseName,
+                'connection_name' => $this->context->connectionName,
                 'tables_requested' => $this->context->tables,
-                'status'           => RestoreStatus::Pending,
-                'started_at'       => now(),
+                'status' => RestoreStatus::Pending,
+                'started_at' => now(),
             ]);
 
             Log::debug("[Restore] Created restore record ID {$this->restoreRecord->id}.");
@@ -102,11 +103,11 @@ class RunRestoreJob implements ShouldQueue
 
             Log::info("[Restore] Starting restore for backup {$backup->id} into connection {$this->context->connectionName}.");
 
-            Log::debug("[Restore] Running RestorePipeline...");
+            Log::debug('[Restore] Running RestorePipeline...');
             $result = $pipeline->run($this->context, $backup, function (RestoreStatus $status) {
-                $this->restoreRecord->markAs($status);
+                $this->restoreRecord?->markAs($status);
             });
-            Log::debug("[Restore] RestorePipeline completed.", ['result' => (array) $result]);
+            Log::debug('[Restore] RestorePipeline completed.', ['result' => (array) $result]);
 
             // The restore target connection may have accumulated session
             // state (implicit DDL commits, FK check toggles, mysqldump
@@ -123,9 +124,9 @@ class RunRestoreJob implements ShouldQueue
 
             $this->restoreRecord->markAs(RestoreStatus::Completed, [
                 'tables_restored' => $result->tablesRestored,
-                'rows_affected'   => $result->totalRowsAffected,
-                'finished_at'     => now(),
-                'duration'        => (int) ceil($result->durationSeconds),
+                'rows_affected' => $result->totalRowsAffected,
+                'finished_at' => now(),
+                'duration' => (int) ceil($result->durationSeconds),
             ]);
 
             event(new RestoreSuccessful($this->context, $this->restoreRecord, $result));
@@ -170,12 +171,12 @@ class RunRestoreJob implements ShouldQueue
 
             try {
                 $this->restoreRecord->markAs($status, [
-                    'finished_at'   => now(),
+                    'finished_at' => now(),
                     'error_message' => mb_substr($e->getMessage(), 0, 65535),
                 ]);
             } catch (\Throwable $updateException) {
                 // Never let a status-update failure mask the original error.
-                Log::error('[Restore] Failed to update restore record: ' . $updateException->getMessage());
+                Log::error('[Restore] Failed to update restore record: '.$updateException->getMessage());
             }
         }
 
@@ -203,11 +204,11 @@ class RunRestoreJob implements ShouldQueue
 
                 try {
                     $this->restoreRecord->markAs(RestoreStatus::Aborted, [
-                        'finished_at'   => now(),
+                        'finished_at' => now(),
                         'error_message' => 'Aborted via SIGTERM',
                     ]);
                 } catch (\Throwable $e) {
-                    Log::error('[Restore] Failed to mark as aborted: ' . $e->getMessage());
+                    Log::error('[Restore] Failed to mark as aborted: '.$e->getMessage());
                 }
             }
 

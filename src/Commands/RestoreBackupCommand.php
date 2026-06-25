@@ -21,6 +21,7 @@ class RestoreBackupCommand extends Command
     {
         if (App::environment('production') && ! $this->option('force')) {
             $this->error('Application is in production. Use --force to confirm this destructive operation.');
+
             return self::FAILURE;
         }
 
@@ -43,7 +44,7 @@ class RestoreBackupCommand extends Command
         $this->info("Restore job dispatched for backup ID {$backupId}.");
 
         if ($tables !== []) {
-            $this->line('Requested tables: ' . implode(', ', $tables));
+            $this->line('Requested tables: '.implode(', ', $tables));
         } else {
             $this->line('Requested tables: [FULL RESTORE]');
         }

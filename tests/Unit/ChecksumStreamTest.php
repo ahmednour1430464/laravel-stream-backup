@@ -20,9 +20,7 @@ final class InMemoryBackupStream implements BackupStream
     /**
      * @param  array<int, string>  $chunks
      */
-    public function __construct(private readonly array $chunks)
-    {
-    }
+    public function __construct(private readonly array $chunks) {}
 
     public function read(int $length = 65536): ?string
     {
@@ -53,9 +51,9 @@ final class ChecksumStreamTest extends TestCase
 {
     public function test_checksum_matches_direct_sha256_of_full_payload(): void
     {
-        $chunks  = ['hello ', 'world', '!', ' goodbye'];
+        $chunks = ['hello ', 'world', '!', ' goodbye'];
         $payload = implode('', $chunks);
-        $inner   = new InMemoryBackupStream($chunks);
+        $inner = new InMemoryBackupStream($chunks);
 
         $tee = new ChecksumStream($inner);
 
@@ -73,7 +71,7 @@ final class ChecksumStreamTest extends TestCase
     public function test_empty_chunks_do_not_break_hash(): void
     {
         $inner = new InMemoryBackupStream(['', 'abc', '', 'def']);
-        $tee   = new ChecksumStream($inner);
+        $tee = new ChecksumStream($inner);
 
         while (($chunk = $tee->read()) !== null) {
             // drain
@@ -86,7 +84,7 @@ final class ChecksumStreamTest extends TestCase
     public function test_close_is_idempotent(): void
     {
         $inner = new InMemoryBackupStream(['payload']);
-        $tee   = new ChecksumStream($inner);
+        $tee = new ChecksumStream($inner);
 
         while (($chunk = $tee->read()) !== null) {
             // drain
@@ -103,7 +101,7 @@ final class ChecksumStreamTest extends TestCase
     public function test_checksum_can_be_requested_before_close(): void
     {
         $inner = new InMemoryBackupStream(['one', 'two']);
-        $tee   = new ChecksumStream($inner);
+        $tee = new ChecksumStream($inner);
 
         while (($chunk = $tee->read()) !== null) {
             // drain

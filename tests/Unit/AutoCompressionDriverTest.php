@@ -25,7 +25,7 @@ final class AutoCompressionDriverTest extends TestCase
             self::markTestSkipped('pigz is not installed on this system.');
         }
 
-        $driver = new AutoCompressionDriver(new BinaryLocator(), 4, new NullLogger());
+        $driver = new AutoCompressionDriver(new BinaryLocator, 4, new NullLogger);
 
         self::assertSame('pigz', $driver->name());
         self::assertStringContainsString('pigz', $driver->buildCommand()[0]);
@@ -42,7 +42,7 @@ final class AutoCompressionDriverTest extends TestCase
         // The auto driver's own `binaryExists()` probe uses `which`,
         // so we simulate a system without pigz by manipulating PATH.
         $originalPath = getenv('PATH');
-        $tmpDir = sys_get_temp_dir() . '/stream-backup-test-' . getmypid();
+        $tmpDir = sys_get_temp_dir().'/stream-backup-test-'.getmypid();
         @mkdir($tmpDir, 0700, true);
 
         try {
@@ -51,7 +51,7 @@ final class AutoCompressionDriverTest extends TestCase
                 self::markTestSkipped('gzip is not installed on this system.');
             }
 
-            symlink($gzipReal, $tmpDir . '/gzip');
+            symlink($gzipReal, $tmpDir.'/gzip');
 
             // Restrict PATH so `which pigz` fails
             putenv("PATH={$tmpDir}");
@@ -61,14 +61,14 @@ final class AutoCompressionDriverTest extends TestCase
                 ->method('notice')
                 ->with(self::stringContains('pigz not found'));
 
-            $locator = new BinaryLocator();
-            $driver  = new AutoCompressionDriver($locator, 4, $logger);
+            $locator = new BinaryLocator;
+            $driver = new AutoCompressionDriver($locator, 4, $logger);
 
             self::assertSame('gzip', $driver->name());
             self::assertStringContainsString('gzip', $driver->buildCommand()[0]);
         } finally {
             putenv("PATH={$originalPath}");
-            @unlink($tmpDir . '/gzip');
+            @unlink($tmpDir.'/gzip');
             @rmdir($tmpDir);
         }
     }
@@ -83,9 +83,9 @@ final class AutoCompressionDriverTest extends TestCase
         // If it falls back, notice should fire at most once
         $logger->expects(self::atMost(1))->method('notice');
 
-        $driver = new AutoCompressionDriver(new BinaryLocator(), 4, $logger);
+        $driver = new AutoCompressionDriver(new BinaryLocator, 4, $logger);
 
-        $first  = $driver->name();
+        $first = $driver->name();
         $second = $driver->name();
 
         self::assertSame($first, $second);
@@ -96,10 +96,10 @@ final class AutoCompressionDriverTest extends TestCase
      */
     public function test_decompress_command_matches_resolved_driver(): void
     {
-        $driver = new AutoCompressionDriver(new BinaryLocator(), 4, new NullLogger());
+        $driver = new AutoCompressionDriver(new BinaryLocator, 4, new NullLogger);
 
-        $name       = $driver->name();
-        $decompCmd  = $driver->buildDecompressCommand();
+        $name = $driver->name();
+        $decompCmd = $driver->buildDecompressCommand();
 
         self::assertStringContainsString($name, $decompCmd[0]);
         self::assertContains('-d', $decompCmd);

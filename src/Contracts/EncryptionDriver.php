@@ -37,8 +37,8 @@ interface EncryptionDriver
      *  - Wipe key material from memory on close().
      *
      * @param  BackupStream  $inner  Upstream stream (e.g. pigz stdout)
-     * @param  string        $key    Raw binary key; length MUST equal keyLength()
-     * @return BackupStream          The encrypted stream
+     * @param  string  $key  Raw binary key; length MUST equal keyLength()
+     * @return BackupStream The encrypted stream
      */
     public function spawn(BackupStream $inner, string $key): BackupStream;
 
@@ -67,8 +67,8 @@ interface EncryptionDriver
      *  - Wipe key material from memory on close().
      *
      * @param  BackupStream  $inner  Upstream ciphertext stream (e.g. S3 download body)
-     * @param  string        $key    Raw binary key; length MUST equal keyLength()
-     * @return BackupStream          The decrypted plaintext stream
+     * @param  string  $key  Raw binary key; length MUST equal keyLength()
+     * @return BackupStream The decrypted plaintext stream
      */
     public function spawnDecrypt(BackupStream $inner, string $key): BackupStream;
 }

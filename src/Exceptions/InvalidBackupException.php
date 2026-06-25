@@ -6,6 +6,4 @@ namespace Ahmednour\StreamBackup\Exceptions;
 
 use RuntimeException;
 
-class InvalidBackupException extends RuntimeException
-{
-}
+class InvalidBackupException extends RuntimeException {}

@@ -21,10 +21,12 @@ class BackupTenantCommand extends Command
 
         if ($context === null) {
             $this->error("No tenant matches '{$identifier}'.");
+
             return self::FAILURE;
         }
 
         $this->info("Dispatched backup for {$context->databaseName} (connection: {$context->connectionName}).");
+
         return self::SUCCESS;
     }
 }

@@ -25,9 +25,7 @@ use Illuminate\Contracts\Config\Repository as Config;
  */
 final class EncryptionKeyResolver
 {
-    public function __construct(private readonly Config $config)
-    {
-    }
+    public function __construct(private readonly Config $config) {}
 
     /**
      * Return the raw binary encryption key for the given driver.
@@ -50,12 +48,13 @@ final class EncryptionKeyResolver
 
             if ($raw === false) {
                 throw new InvalidConfigException(
-                    'STREAM_BACKUP_ENCRYPTION_KEY is not valid strict base64. ' .
+                    'STREAM_BACKUP_ENCRYPTION_KEY is not valid strict base64. '.
                     'Generate a key: php -r "echo base64_encode(random_bytes(32));"'
                 );
             }
 
             $this->assertKeyLength($raw, $driver);
+
             return $raw;
         }
 
@@ -77,11 +76,12 @@ final class EncryptionKeyResolver
 
             $raw = (string) file_get_contents($file);
             $this->assertKeyLength($raw, $driver);
+
             return $raw;
         }
 
         throw new InvalidConfigException(
-            "Encryption driver '{$driver->name()}' is active but no key is configured. " .
+            "Encryption driver '{$driver->name()}' is active but no key is configured. ".
             'Set STREAM_BACKUP_ENCRYPTION_KEY (base64) or STREAM_BACKUP_ENCRYPTION_KEY_FILE.'
         );
     }
@@ -90,7 +90,7 @@ final class EncryptionKeyResolver
     {
         if (strlen($key) !== $driver->keyLength()) {
             throw new InvalidConfigException(sprintf(
-                "Encryption driver '%s' requires a %d-byte key; resolved key is %d bytes. " .
+                "Encryption driver '%s' requires a %d-byte key; resolved key is %d bytes. ".
                 'Generate a valid key: php -r "echo base64_encode(random_bytes(%d));"',
                 $driver->name(),
                 $driver->keyLength(),

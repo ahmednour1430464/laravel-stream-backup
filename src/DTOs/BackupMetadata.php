@@ -16,6 +16,5 @@ final class BackupMetadata
         public readonly string $disk,
         public readonly CarbonImmutable $startedAt,
         public readonly string $contentType = 'application/gzip',
-    ) {
-    }
+    ) {}
 }

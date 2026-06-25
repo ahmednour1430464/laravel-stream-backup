@@ -14,6 +14,5 @@ class RestoreFailed
     public function __construct(
         public readonly RestoreContext $context,
         public readonly \Throwable $exception,
-    ) {
-    }
+    ) {}
 }

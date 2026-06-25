@@ -7,7 +7,9 @@ namespace Ahmednour\StreamBackup\Models;
 use Ahmednour\StreamBackup\Enums\BackupStatus;
 use Ahmednour\StreamBackup\Enums\RetentionTier;
 use Ahmednour\StreamBackup\Exceptions\InvalidStatusTransitionException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * Eloquent model for the `backups` table.
@@ -15,26 +17,26 @@ use Illuminate\Database\Eloquent\Model;
  * Use markAs() instead of assigning $model->status directly: the wrapper
  * enforces the state machine defined on BackupStatus::canTransitionTo().
  *
- * @property int|null         $id
- * @property string|null      $tenant_id
- * @property string           $database_name
- * @property string|null      $connection_name
- * @property string           $disk
- * @property string|null      $path
- * @property BackupStatus     $status
+ * @property int|null $id
+ * @property string|null $tenant_id
+ * @property string $database_name
+ * @property string|null $connection_name
+ * @property string $disk
+ * @property string|null $path
+ * @property BackupStatus $status
  * @property RetentionTier|null $retention_tier
- * @property string|null      $upload_id
- * @property int              $parts_uploaded
- * @property int|null         $size
- * @property string|null      $checksum
- * @property string|null      $compression_driver
- * @property string|null      $encryption_driver
- * @property float|null       $compression_ratio
- * @property float|null       $upload_speed_mbps
- * @property \Illuminate\Support\Carbon|null $started_at
- * @property \Illuminate\Support\Carbon|null $finished_at
- * @property int|null         $duration
- * @property string|null      $error_message
+ * @property string|null $upload_id
+ * @property int $parts_uploaded
+ * @property int|null $size
+ * @property string|null $checksum
+ * @property string|null $compression_driver
+ * @property string|null $encryption_driver
+ * @property float|null $compression_ratio
+ * @property float|null $upload_speed_mbps
+ * @property Carbon|null $started_at
+ * @property Carbon|null $finished_at
+ * @property int|null $duration
+ * @property string|null $error_message
  */
 class Backup extends Model
 {
@@ -43,17 +45,20 @@ class Backup extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'status'            => BackupStatus::class,
-        'retention_tier'    => RetentionTier::class,
-        'parts_uploaded'    => 'int',
-        'size'              => 'int',
+        'status' => BackupStatus::class,
+        'retention_tier' => RetentionTier::class,
+        'parts_uploaded' => 'int',
+        'size' => 'int',
         'compression_ratio' => 'float',
         'upload_speed_mbps' => 'float',
-        'started_at'        => 'datetime',
-        'finished_at'       => 'datetime',
-        'duration'          => 'int',
+        'started_at' => 'datetime',
+        'finished_at' => 'datetime',
+        'duration' => 'int',
     ];
 
+    /**
+     * @param  array<string, mixed>  $extra
+     */
     public function markAs(BackupStatus $next, array $extra = []): void
     {
         $current = $this->status instanceof BackupStatus ? $this->status : BackupStatus::Pending;
@@ -71,6 +76,10 @@ class Backup extends Model
 
     }
 
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
     public function scopeSuccessful($query)
     {
         return $query->where('status', BackupStatus::Completed->value);

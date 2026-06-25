@@ -12,7 +12,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Scheduled safety net that aborts S3 multipart uploads left over after a
@@ -61,18 +60,18 @@ class AbortStaleMultipartUploads implements ShouldQueue
         try {
             $bucket = config("filesystems.disks.{$backup->disk}.bucket", $backup->disk);
             $s3->abortMultipartUpload([
-                'Bucket'   => $bucket,
-                'Key'      => $backup->path,
+                'Bucket' => $bucket,
+                'Key' => $backup->path,
                 'UploadId' => $backup->upload_id,
             ]);
 
             $backup->forceFill([
-                'status'        => BackupStatus::Aborted->value,
-                'finished_at'   => now(),
+                'status' => BackupStatus::Aborted->value,
+                'finished_at' => now(),
                 'error_message' => 'Aborted by stale multipart cleanup.',
             ])->save();
         } catch (\Throwable $e) {
-           
+
         }
     }
 }

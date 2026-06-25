@@ -48,17 +48,17 @@ final class SqlDumpParser
     /**
      * Parse a readable stream and extract SQL blocks for requested tables.
      *
-     * @param resource $stream   Decompressed SQL stream (e.g. pigz stdout)
-     * @param string[] $tables   Tables to extract (empty = all tables)
+     * @param  resource  $stream  Decompressed SQL stream (e.g. pigz stdout)
+     * @param  string[]  $tables  Tables to extract (empty = all tables)
      * @return array<string, resource> Map of table_name => php://temp stream
      *                                 containing the full SQL block for that table
      *
-     * @throws TableNotFoundException  If any requested table is not found in the dump
-     * @throws InvalidBackupException  If the stream is not valid mysqldump output
+     * @throws TableNotFoundException If any requested table is not found in the dump
+     * @throws InvalidBackupException If the stream is not valid mysqldump output
      */
     public function parse($stream, array $tables): array
     {
-        $selectAll       = $tables === [];
+        $selectAll = $tables === [];
         $requestedLookup = array_flip(array_map('trim', $tables));
 
         /** @var array<string, resource> $buffers Table name => php://temp resource */
@@ -78,14 +78,18 @@ final class SqlDumpParser
 
             // Detect "Table structure for table `xxx`" markers.
             if (preg_match(self::TABLE_STRUCTURE_PATTERN, $trimmedLine, $matches) === 1) {
-                $tableName     = $matches[1];
+                $tableName = $matches[1];
                 $foundAnyTable = true;
 
                 if ($selectAll || isset($requestedLookup[$tableName])) {
                     $currentTable = $tableName;
 
                     if (! isset($buffers[$tableName])) {
-                        $buffers[$tableName] = fopen('php://temp/maxmemory:' . self::TEMP_MAX_MEMORY, 'r+b');
+                        $buf = fopen('php://temp/maxmemory:'.self::TEMP_MAX_MEMORY, 'r+b');
+                        if ($buf === false) {
+                            throw new InvalidBackupException('Failed to open php://temp stream for table buffer.');
+                        }
+                        $buffers[$tableName] = $buf;
                         Log::info("[Restore] Found table `{$tableName}` in backup.");
                     }
                 } else {
@@ -109,7 +113,11 @@ final class SqlDumpParser
 
                     // Ensure buffer exists (in case data section appears without structure).
                     if (! isset($buffers[$tableName])) {
-                        $buffers[$tableName] = fopen('php://temp/maxmemory:' . self::TEMP_MAX_MEMORY, 'r+b');
+                        $buf = fopen('php://temp/maxmemory:'.self::TEMP_MAX_MEMORY, 'r+b');
+                        if ($buf === false) {
+                            throw new InvalidBackupException('Failed to open php://temp stream for table buffer.');
+                        }
+                        $buffers[$tableName] = $buf;
                     }
                 } else {
                     $currentTable = null;
@@ -132,13 +140,13 @@ final class SqlDumpParser
 
             throw new InvalidBackupException(
                 'No table markers found in the backup file. '
-                . 'The file may be corrupt or not a valid mysqldump output.'
+                .'The file may be corrupt or not a valid mysqldump output.'
             );
         }
 
         // Validate that all requested tables were found.
         if (! $selectAll) {
-            $found   = array_keys($buffers);
+            $found = array_keys($buffers);
             $missing = array_diff(array_keys($requestedLookup), $found);
 
             if ($missing !== []) {

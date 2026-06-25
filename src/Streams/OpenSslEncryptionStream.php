@@ -43,23 +43,25 @@ use Ahmednour\StreamBackup\Contracts\BackupStream;
 final class OpenSslEncryptionStream implements BackupStream
 {
     private const ALGORITHM = 'aes-256-gcm';
-    private const VERSION   = "\x01";
+
+    private const VERSION = "\x01";
+
     private const NONCE_LEN = 12;
-    private const TAG_LEN   = 16;
 
     private string $baseNonce;
-    private int    $chunkIndex = 0;
+
+    private int $chunkIndex = 0;
 
     /** Bytes buffered from the header, not yet returned to the caller. */
-    private string $pending    = '';
+    private string $pending = '';
 
     /** True once the inner stream has signalled EOF (returned null). */
-    private bool $innerDone   = false;
+    private bool $innerDone = false;
 
     /** True once read() has returned null. */
-    private bool $eof         = false;
+    private bool $eof = false;
 
-    private bool $closed      = false;
+    private bool $closed = false;
 
     public function __construct(
         private readonly BackupStream $inner,
@@ -67,7 +69,7 @@ final class OpenSslEncryptionStream implements BackupStream
     ) {
         $this->baseNonce = random_bytes(self::NONCE_LEN);
         // Pre-load the file header into pending so the first read() returns it.
-        $this->pending = self::VERSION . $this->baseNonce;
+        $this->pending = self::VERSION.$this->baseNonce;
     }
 
     public function read(int $length = 65536): ?string
@@ -78,8 +80,9 @@ final class OpenSslEncryptionStream implements BackupStream
 
         // (A) Drain the header bytes before any encryption work.
         if ($this->pending !== '') {
-            $out           = $this->pending;
+            $out = $this->pending;
             $this->pending = '';
+
             return $out;
         }
 
@@ -87,6 +90,7 @@ final class OpenSslEncryptionStream implements BackupStream
         //     call — now signal EOF to the pipeline loop.
         if ($this->innerDone) {
             $this->eof = true;
+
             return null;
         }
 
@@ -100,12 +104,13 @@ final class OpenSslEncryptionStream implements BackupStream
         // Inner stream exhausted — emit the 4-byte EOF terminator.
         if ($plain === null) {
             $this->innerDone = true;
+
             return pack('N', 0);
         }
 
         // Encrypt the chunk with a unique per-chunk nonce.
-        $nonce      = $this->deriveNonce($this->chunkIndex++);
-        $tag        = '';
+        $nonce = $this->deriveNonce($this->chunkIndex++);
+        $tag = '';
         $ciphertext = openssl_encrypt(
             $plain,
             self::ALGORITHM,
@@ -117,12 +122,12 @@ final class OpenSslEncryptionStream implements BackupStream
 
         if ($ciphertext === false) {
             throw new \RuntimeException(
-                'AES-256-GCM encryption failed: ' . openssl_error_string()
+                'AES-256-GCM encryption failed: '.openssl_error_string()
             );
         }
 
         // Frame: [4-byte BE len][16-byte tag][ciphertext]
-        return pack('N', strlen($ciphertext)) . $tag . $ciphertext;
+        return pack('N', strlen($ciphertext)).$tag.$ciphertext;
     }
 
     public function isEof(): bool
@@ -138,10 +143,10 @@ final class OpenSslEncryptionStream implements BackupStream
         $this->closed = true;
 
         // Wipe the key from PHP memory before any possible exception.
+        $key = $this->key;
+        $this->key = str_repeat("\x00", strlen($key));
         if (function_exists('sodium_memzero')) {
-            sodium_memzero($this->key);
-        } else {
-            $this->key = str_repeat("\x00", strlen($this->key));
+            sodium_memzero($key);
         }
 
         $this->inner->close();
@@ -158,6 +163,7 @@ final class OpenSslEncryptionStream implements BackupStream
     private function deriveNonce(int $index): string
     {
         $suffix = substr($this->baseNonce, self::NONCE_LEN - 4) ^ pack('N', $index);
-        return substr($this->baseNonce, 0, self::NONCE_LEN - 4) . $suffix;
+
+        return substr($this->baseNonce, 0, self::NONCE_LEN - 4).$suffix;
     }
 }

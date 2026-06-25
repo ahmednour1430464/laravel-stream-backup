@@ -34,14 +34,13 @@ final class EncryptionFactory
     public function __construct(
         private readonly Application $app,
         private readonly Config $config,
-    ) {
-    }
+    ) {}
 
     /**
      * Register a custom encryption driver.
      *
-     * @param string  $name    Driver name used in config (e.g. 'age', 'gpg')
-     * @param Closure $factory fn(Application): EncryptionDriver
+     * @param  string  $name  Driver name used in config (e.g. 'age', 'gpg')
+     * @param  Closure  $factory  fn(Application): EncryptionDriver
      */
     public function extend(string $name, Closure $factory): void
     {
@@ -56,7 +55,7 @@ final class EncryptionFactory
      *   2. Built-in drivers (none, openssl-aes-256-gcm, sodium)
      *   3. InvalidConfigException
      *
-     * @param string|null $driver  null = use global config value
+     * @param  string|null  $driver  null = use global config value
      */
     public function make(?string $driver = null): EncryptionDriver
     {
@@ -67,11 +66,11 @@ final class EncryptionFactory
         }
 
         return match ($driver) {
-            'none'                => $this->app->make(NullEncryptionDriver::class),
+            'none' => $this->app->make(NullEncryptionDriver::class),
             'openssl-aes-256-gcm' => $this->app->make(OpenSslAes256GcmDriver::class),
-            'sodium'              => $this->app->make(SodiumDriver::class),
-            default               => throw new InvalidConfigException(
-                "Unknown encryption driver '{$driver}'. " .
+            'sodium' => $this->app->make(SodiumDriver::class),
+            default => throw new InvalidConfigException(
+                "Unknown encryption driver '{$driver}'. ".
                 'Register it via EncryptionFactory::extend() or use one of: none, openssl-aes-256-gcm, sodium.'
             ),
         };

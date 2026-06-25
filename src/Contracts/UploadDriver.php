@@ -29,7 +29,7 @@ interface UploadDriver
     /**
      * Send one chunk. $body is a seekable resource at position 0.
      *
-     * @param resource $body
+     * @param  resource  $body
      */
     public function uploadChunk(WriteSession $session, int $chunkNumber, $body, int $size): void;
 

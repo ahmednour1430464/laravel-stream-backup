@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/vendor/autoload.php';
+require __DIR__.'/vendor/autoload.php';
 
 use Aws\S3\S3Client;
 
@@ -22,11 +22,11 @@ function loadEnv(string $path): void
     }
 }
 
-loadEnv(__DIR__ . '/.env');
+loadEnv(__DIR__.'/.env');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const READ_CHUNK_SIZE = 64 * 1024;       //  64 KB  — read chunks from pipes
-const S3_PART_SIZE    = 32 * 1024 * 1024; //  32 MB  — S3 multipart part size
+const S3_PART_SIZE = 32 * 1024 * 1024; //  32 MB  — S3 multipart part size
 //
 // Why 32 MB instead of 8 MB?
 // Fewer parts = fewer HTTP round-trips = faster wall-clock time.
@@ -37,30 +37,30 @@ const S3_PART_SIZE    = 32 * 1024 * 1024; //  32 MB  — S3 multipart part size
 // ─── Config ───────────────────────────────────────────────────────────────────
 $config = [
     'mysql' => [
-        'host'     => $_ENV['DB_HOST'],
-        'port'     => (int) $_ENV['DB_PORT'],
+        'host' => $_ENV['DB_HOST'],
+        'port' => (int) $_ENV['DB_PORT'],
         'database' => $_ENV['DB_NAME'],
         'username' => $_ENV['DB_USER'],
         'password' => $_ENV['DB_PASS'],
     ],
     's3' => [
         'bucket' => $_ENV['DO_SPACES_BUCKET'],
-        'key'    => date('Y-m-d_H-i-s') . '.sql.gz',
+        'key' => date('Y-m-d_H-i-s').'.sql.gz',
     ],
 ];
 
 // ─── S3 Client ────────────────────────────────────────────────────────────────
 $s3 = new S3Client([
-    'version'  => 'latest',
-    'region'   => $_ENV['DO_SPACES_REGION'],
+    'version' => 'latest',
+    'region' => $_ENV['DO_SPACES_REGION'],
     'endpoint' => $_ENV['DO_SPACES_ENDPOINT'],
     'credentials' => [
-        'key'    => $_ENV['DO_SPACES_KEY'],
+        'key' => $_ENV['DO_SPACES_KEY'],
         'secret' => $_ENV['DO_SPACES_SECRET'],
     ],
-    'use_path_style_endpoint'       => false,
-    'request_checksum_calculation'  => 'when_required',
-    'response_checksum_validation'  => 'when_required',
+    'use_path_style_endpoint' => false,
+    'request_checksum_calculation' => 'when_required',
+    'response_checksum_validation' => 'when_required',
 ]);
 
 // ─── Secure credentials file ──────────────────────────────────────────────────
@@ -118,13 +118,13 @@ stream_set_blocking($pigzPipes[1], false);
 stream_set_blocking($pigzPipes[2], false);
 
 // ─── Multipart upload init ────────────────────────────────────────────────────
-$upload   = $s3->createMultipartUpload([
-    'Bucket'      => $config['s3']['bucket'],
-    'Key'         => $config['s3']['key'],
+$upload = $s3->createMultipartUpload([
+    'Bucket' => $config['s3']['bucket'],
+    'Key' => $config['s3']['key'],
     'ContentType' => 'application/gzip',
 ]);
 $uploadId = $upload['UploadId'];
-$parts    = [];
+$parts = [];
 $partNumber = 1;
 $totalBytesUploaded = 0;
 $startTime = microtime(true);
@@ -136,9 +136,9 @@ $startTime = microtime(true);
 $partBuffer = fopen('php://temp', 'r+b');
 $bufferSize = 0;
 
-$dumpDone      = false;
+$dumpDone = false;
 $pigzInputDone = false;
-$pigzDone      = false;
+$pigzDone = false;
 
 // ─── Helper: flush the temp buffer as one S3 part ─────────────────────────────
 $flushPart = function () use (
@@ -148,16 +148,16 @@ $flushPart = function () use (
     rewind($partBuffer);
 
     $result = $s3->uploadPart([
-        'Bucket'     => $config['s3']['bucket'],
-        'Key'        => $config['s3']['key'],
-        'UploadId'   => $uploadId,
+        'Bucket' => $config['s3']['bucket'],
+        'Key' => $config['s3']['key'],
+        'UploadId' => $uploadId,
         'PartNumber' => $partNumber,
-        'Body'       => $partBuffer, // stream resource — no string copy
+        'Body' => $partBuffer, // stream resource — no string copy
         'ContentLength' => $bufferSize,
     ]);
 
     $parts[] = [
-        'ETag'       => $result['ETag'],
+        'ETag' => $result['ETag'],
         'PartNumber' => $partNumber,
     ];
 
@@ -184,8 +184,8 @@ $flushPart = function () use (
 // ─── Pipeline loop ────────────────────────────────────────────────────────────
 try {
     while (true) {
-        $read   = [];
-        $write  = null;
+        $read = [];
+        $write = null;
         $except = null;
 
         if (! $dumpDone) {
@@ -214,7 +214,7 @@ try {
                 // Write loop: fwrite on a non-blocking pipe may write less
                 // than requested if the pipe buffer is full.
                 $offset = 0;
-                $len    = strlen($data);
+                $len = strlen($data);
 
                 while ($offset < $len) {
                     $written = @fwrite($pigzPipes[0], substr($data, $offset));
@@ -223,6 +223,7 @@ try {
                         // pigz stdin buffer full — yield to stream_select
                         // on the next iteration rather than spinning.
                         usleep(1_000);
+
                         continue;
                     }
 
@@ -233,7 +234,7 @@ try {
             if (feof($dumpPipes[1])) {
                 fclose($dumpPipes[1]);
                 fclose($pigzPipes[0]); // Signal EOF to pigz
-                $dumpDone      = true;
+                $dumpDone = true;
                 $pigzInputDone = true;
             }
         }
@@ -267,7 +268,7 @@ try {
 
     if (empty($parts)) {
         $stderr = stream_get_contents($dumpPipes[2]);
-        throw new RuntimeException('No data uploaded. mysqldump stderr: ' . trim((string) $stderr));
+        throw new RuntimeException('No data uploaded. mysqldump stderr: '.trim((string) $stderr));
     }
 
     // ── Verify child processes succeeded BEFORE completing the upload.
@@ -290,21 +291,21 @@ try {
     if ($dumpExit !== 0) {
         $stderr = stream_get_contents($dumpPipes[2]);
         throw new RuntimeException(
-            "mysqldump exited with code $dumpExit. stderr: " . trim((string) $stderr)
+            "mysqldump exited with code $dumpExit. stderr: ".trim((string) $stderr)
         );
     }
     if ($pigzExit !== 0) {
         $stderr = stream_get_contents($pigzPipes[2]);
         throw new RuntimeException(
-            "pigz exited with code $pigzExit. stderr: " . trim((string) $stderr)
+            "pigz exited with code $pigzExit. stderr: ".trim((string) $stderr)
         );
     }
 
     // ── Complete multipart upload ─────────────────────────────────────────────
     $s3->completeMultipartUpload([
-        'Bucket'          => $config['s3']['bucket'],
-        'Key'             => $config['s3']['key'],
-        'UploadId'        => $uploadId,
+        'Bucket' => $config['s3']['bucket'],
+        'Key' => $config['s3']['key'],
+        'UploadId' => $uploadId,
         'MultipartUpload' => ['Parts' => $parts],
     ]);
 
@@ -316,22 +317,22 @@ try {
     $duration = microtime(true) - $startTime;
 
     echo PHP_EOL;
-    echo 'Backup completed' . PHP_EOL;
-    echo 'S3 Key:      ' . $config['s3']['key'] . PHP_EOL;
-    echo 'Uploaded:    ' . round($totalBytesUploaded / 1024 / 1024, 2) . ' MB' . PHP_EOL;
-    echo 'Duration:    ' . round($duration, 2) . ' sec' . PHP_EOL;
-    echo 'Peak Memory: ' . round(memory_get_peak_usage(true) / 1024 / 1024, 2) . ' MB' . PHP_EOL;
+    echo 'Backup completed'.PHP_EOL;
+    echo 'S3 Key:      '.$config['s3']['key'].PHP_EOL;
+    echo 'Uploaded:    '.round($totalBytesUploaded / 1024 / 1024, 2).' MB'.PHP_EOL;
+    echo 'Duration:    '.round($duration, 2).' sec'.PHP_EOL;
+    echo 'Peak Memory: '.round(memory_get_peak_usage(true) / 1024 / 1024, 2).' MB'.PHP_EOL;
 
 } catch (Throwable $e) {
-    echo 'ERROR: ' . $e->getMessage() . PHP_EOL;
+    echo 'ERROR: '.$e->getMessage().PHP_EOL;
 
     try {
         $s3->abortMultipartUpload([
-            'Bucket'   => $config['s3']['bucket'],
-            'Key'      => $config['s3']['key'],
+            'Bucket' => $config['s3']['bucket'],
+            'Key' => $config['s3']['key'],
             'UploadId' => $uploadId,
         ]);
-        echo 'Multipart upload aborted.' . PHP_EOL;
+        echo 'Multipart upload aborted.'.PHP_EOL;
     } catch (Throwable) {
         // best effort
     }

@@ -13,12 +13,12 @@ final class BackupPathBuilderTest extends TestCase
 {
     public function test_builds_tenant_scoped_path(): void
     {
-        $builder = new BackupPathBuilder();
+        $builder = new BackupPathBuilder;
         $context = new BackupContext(
-            tenantId:       42,
-            databaseName:   'acme_main',
+            tenantId: 42,
+            databaseName: 'acme_main',
             connectionName: 'mysql',
-            disk:           's3',
+            disk: 's3',
         );
         $at = CarbonImmutable::parse('2026-05-10 02:03:04', 'UTC');
 
@@ -29,12 +29,12 @@ final class BackupPathBuilderTest extends TestCase
 
     public function test_null_tenant_uses_global_segment(): void
     {
-        $builder = new BackupPathBuilder();
+        $builder = new BackupPathBuilder;
         $context = new BackupContext(
-            tenantId:       null,
-            databaseName:   'single_app',
+            tenantId: null,
+            databaseName: 'single_app',
             connectionName: 'mysql',
-            disk:           's3',
+            disk: 's3',
         );
         $at = CarbonImmutable::parse('2026-01-01 00:00:00', 'UTC');
 
@@ -45,12 +45,12 @@ final class BackupPathBuilderTest extends TestCase
 
     public function test_empty_string_tenant_uses_global_segment(): void
     {
-        $builder = new BackupPathBuilder();
+        $builder = new BackupPathBuilder;
         $context = new BackupContext(
-            tenantId:       '',
-            databaseName:   'db',
+            tenantId: '',
+            databaseName: 'db',
             connectionName: 'mysql',
-            disk:           's3',
+            disk: 's3',
         );
         $at = CarbonImmutable::parse('2026-12-31 23:59:59', 'UTC');
 
@@ -61,12 +61,12 @@ final class BackupPathBuilderTest extends TestCase
 
     public function test_string_tenant_is_preserved(): void
     {
-        $builder = new BackupPathBuilder();
+        $builder = new BackupPathBuilder;
         $context = new BackupContext(
-            tenantId:       'tenant-abc',
-            databaseName:   'shop',
+            tenantId: 'tenant-abc',
+            databaseName: 'shop',
             connectionName: 'mysql',
-            disk:           's3',
+            disk: 's3',
         );
         $at = CarbonImmutable::parse('2026-07-04 12:30:45', 'UTC');
 

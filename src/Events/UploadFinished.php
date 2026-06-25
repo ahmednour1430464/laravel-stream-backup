@@ -15,6 +15,5 @@ class UploadFinished
     public function __construct(
         public readonly BackupContext $context,
         public readonly UploadResult $result
-    ) {
-    }
+    ) {}
 }

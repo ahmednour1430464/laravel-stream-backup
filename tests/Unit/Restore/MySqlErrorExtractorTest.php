@@ -35,7 +35,7 @@ final class MySqlErrorExtractorTest extends TestCase
         // No previous, no errorInfo — only the message carries the code.
         $e = new \RuntimeException(
             'SQLSTATE[42000]: Syntax error or access violation: 1227 Access denied; '
-            . 'you need (at least one of) the SUPER or SET_USER_ID privilege(s) for this operation'
+            .'you need (at least one of) the SUPER or SET_USER_ID privilege(s) for this operation'
         );
 
         $this->assertSame(1227, MySqlErrorExtractor::code($e));

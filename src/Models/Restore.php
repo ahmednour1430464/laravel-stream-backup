@@ -8,6 +8,7 @@ use Ahmednour\StreamBackup\Enums\RestoreStatus;
 use Ahmednour\StreamBackup\Exceptions\InvalidStatusTransitionException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Eloquent model for the `restores` table.
@@ -15,19 +16,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Use markAs() instead of assigning $model->status directly: the wrapper
  * enforces the state machine defined on RestoreStatus::canTransitionTo().
  *
- * @property int|null                $id
- * @property int                     $backup_id
- * @property string|null             $tenant_id
- * @property string                  $database_name
- * @property string                  $connection_name
- * @property array                   $tables_requested
- * @property array|null              $tables_restored
- * @property RestoreStatus           $status
- * @property int|null                $rows_affected
- * @property \Illuminate\Support\Carbon|null $started_at
- * @property \Illuminate\Support\Carbon|null $finished_at
- * @property int|null                $duration
- * @property string|null             $error_message
+ * @property int|null $id
+ * @property int $backup_id
+ * @property string|null $tenant_id
+ * @property string $database_name
+ * @property string $connection_name
+ * @property array $tables_requested
+ * @property array|null $tables_restored
+ * @property RestoreStatus $status
+ * @property int|null $rows_affected
+ * @property Carbon|null $started_at
+ * @property Carbon|null $finished_at
+ * @property int|null $duration
+ * @property string|null $error_message
  */
 class Restore extends Model
 {
@@ -36,20 +37,26 @@ class Restore extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'status'           => RestoreStatus::class,
+        'status' => RestoreStatus::class,
         'tables_requested' => 'array',
-        'tables_restored'  => 'array',
-        'rows_affected'    => 'int',
-        'started_at'       => 'datetime',
-        'finished_at'      => 'datetime',
-        'duration'         => 'int',
+        'tables_restored' => 'array',
+        'rows_affected' => 'int',
+        'started_at' => 'datetime',
+        'finished_at' => 'datetime',
+        'duration' => 'int',
     ];
 
+    /**
+     * @return BelongsTo<Backup, self>
+     */
     public function backup(): BelongsTo
     {
         return $this->belongsTo(Backup::class);
     }
 
+    /**
+     * @param  array<string, mixed>  $extra
+     */
     public function markAs(RestoreStatus $next, array $extra = []): void
     {
         $current = $this->status instanceof RestoreStatus ? $this->status : RestoreStatus::Pending;

@@ -14,6 +14,5 @@ class BackupFailed
     public function __construct(
         public readonly BackupContext $context,
         public readonly \Throwable $exception
-    ) {
-    }
+    ) {}
 }

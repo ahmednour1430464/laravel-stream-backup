@@ -15,6 +15,5 @@ class RestoreStarting
     public function __construct(
         public readonly RestoreContext $context,
         public readonly Restore $restore,
-    ) {
-    }
+    ) {}
 }

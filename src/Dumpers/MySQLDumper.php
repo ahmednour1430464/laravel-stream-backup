@@ -34,7 +34,7 @@ final class MySQLDumper extends AbstractProcessDumper
     protected function buildCommand(BackupContext $context): array
     {
         $credentials = $this->resolveCredentials($context);
-        $cnfPath     = $this->credentialFile->write($credentials);
+        $cnfPath = $this->credentialFile->write($credentials);
 
         // Backward compat: check the old key first, then the new per-driver key.
         $binary = $this->locator->locate(
@@ -47,7 +47,7 @@ final class MySQLDumper extends AbstractProcessDumper
         return array_merge(
             [
                 $binary,
-                '--defaults-extra-file=' . $cnfPath,
+                '--defaults-extra-file='.$cnfPath,
                 '--single-transaction',
                 '--quick',
                 '--skip-lock-tables',
@@ -76,8 +76,8 @@ final class MySQLDumper extends AbstractProcessDumper
         }
 
         return new DatabaseCredentials(
-            host:     (string) ($conn['host']     ?? '127.0.0.1'),
-            port:     (int)    ($conn['port']     ?? 3306),
+            host: (string) ($conn['host'] ?? '127.0.0.1'),
+            port: (int) ($conn['port'] ?? 3306),
             database: $context->databaseName,
             username: (string) ($conn['username'] ?? ''),
             password: (string) ($conn['password'] ?? ''),

@@ -6,6 +6,4 @@ namespace Ahmednour\StreamBackup\Exceptions;
 
 use RuntimeException;
 
-class RestoreFailedException extends RuntimeException
-{
-}
+class RestoreFailedException extends RuntimeException {}

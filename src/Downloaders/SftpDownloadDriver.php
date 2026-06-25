@@ -71,6 +71,6 @@ final class SftpDownloadDriver implements DownloadDriver
     {
         $path = ltrim($path, '/');
 
-        return $this->root !== '' ? rtrim($this->root, '/') . '/' . $path : $path;
+        return $this->root !== '' ? rtrim($this->root, '/').'/'.$path : $path;
     }
 }

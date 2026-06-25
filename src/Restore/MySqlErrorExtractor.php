@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ahmednour\StreamBackup\Restore;
 
+use Illuminate\Database\QueryException;
+
 /**
  * Extracts the MySQL driver-specific error code from a thrown exception.
  *
- * Laravel wraps raw PDO errors in {@see \Illuminate\Database\QueryException};
+ * Laravel wraps raw PDO errors in {@see QueryException};
  * the original {@see \PDOException} is available via `getPrevious()` and
  * exposes a populated `errorInfo` array whose second element is the
  * driver-specific code (e.g. 1227 for the DEFINER/SUPER access-denied error).

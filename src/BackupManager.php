@@ -6,7 +6,10 @@ namespace Ahmednour\StreamBackup;
 
 use Ahmednour\StreamBackup\Contracts\TenantResolver;
 use Ahmednour\StreamBackup\DTOs\BackupContext;
+use Ahmednour\StreamBackup\DTOs\RestoreContext;
 use Ahmednour\StreamBackup\Jobs\RunBackupJob;
+use Ahmednour\StreamBackup\Jobs\RunRestoreJob;
+use Ahmednour\StreamBackup\Models\Backup;
 use Illuminate\Contracts\Config\Repository as Config;
 
 /**
@@ -19,8 +22,7 @@ class BackupManager
     public function __construct(
         private readonly TenantResolver $resolver,
         private readonly Config $config,
-    ) {
-    }
+    ) {}
 
     /**
      * Dispatch one backup per tenant returned by the resolver.
@@ -34,6 +36,7 @@ class BackupManager
             $this->dispatch($context);
             $count++;
         }
+
         return $count;
     }
 
@@ -49,9 +52,11 @@ class BackupManager
                 || $context->databaseName === $identifier
             ) {
                 $this->dispatch($context);
+
                 return $context;
             }
         }
+
         return null;
     }
 
@@ -65,13 +70,13 @@ class BackupManager
     /**
      * Dispatch a restore job.
      *
-     * @param int             $backupId   The ID of the Backup model to restore
-     * @param string[]        $tables     Specific tables to restore (empty = all)
-     * @param string|null     $connection Target database connection (overrides backup's original connection if set)
+     * @param  int  $backupId  The ID of the Backup model to restore
+     * @param  string[]  $tables  Specific tables to restore (empty = all)
+     * @param  string|null  $connection  Target database connection (overrides backup's original connection if set)
      */
     public function restore(int $backupId, array $tables = [], ?string $connection = null): void
     {
-        $backup = \Ahmednour\StreamBackup\Models\Backup::findOrFail($backupId);
+        $backup = Backup::findOrFail($backupId);
 
         $connectionName = $connection ?? $backup->connection_name;
 
@@ -88,16 +93,16 @@ class BackupManager
             $connectionName ??= $this->config->get('database.default', 'mysql');
         }
 
-        $context = new \Ahmednour\StreamBackup\DTOs\RestoreContext(
-            backupId:       $backupId,
-            tables:         $tables,
+        $context = new RestoreContext(
+            backupId: $backupId,
+            tables: $tables,
             connectionName: (string) $connectionName,
-            databaseName:   $backup->database_name,
-            disk:           (string) $this->config->get('stream-backup.upload.disk', 's3'),
-            tenantId:       $backup->tenant_id,
+            databaseName: $backup->database_name,
+            disk: (string) $this->config->get('stream-backup.upload.disk', 's3'),
+            tenantId: $backup->tenant_id,
         );
 
-        \Ahmednour\StreamBackup\Jobs\RunRestoreJob::dispatch($context)
+        RunRestoreJob::dispatch($context)
             ->onConnection($this->config->get('stream-backup.queue.connection', 'redis'))
             ->onQueue($this->config->get('stream-backup.queue.queue', 'backups'));
     }
