@@ -191,11 +191,34 @@ final class TableRestorer
      */
     private function executeStatement(ConnectionInterface $db, string $statement, string $tableName): int
     {
+        if ($this->shouldSkip($statement)) {
+            return 0;
+        }
+
         if ($this->stripDefiners) {
             $statement = $this->definerStripper->stripDefiner($statement);
         }
 
         try {
+            // Use PDO::exec() directly instead of $db->unprepared() to bypass
+            // Laravel's query logging and event system. This avoids two issues:
+            //
+            // 1. Query listeners that format SQL with sprintf() crash on
+            //    statements containing literal '%' characters (URLs, LIKE
+            //    patterns, etc.), producing "The arguments array must contain
+            //    N items, 0 given" errors.
+            //
+            // 2. PDO::exec() returns the actual number of affected rows,
+            //    whereas unprepared() only returns true/false, giving
+            //    inaccurate row counts.
+            $pdo = method_exists($db, 'getPdo') ? $db->getPdo() : null;
+
+            if ($pdo !== null) {
+                $result = $pdo->exec($statement);
+
+                return $result === false ? 0 : (int) $result;
+            }
+
             return (int) $db->unprepared($statement);
         } catch (\Throwable $e) {
             $code = MySqlErrorExtractor::code($e);
@@ -213,5 +236,31 @@ final class TableRestorer
 
             throw $e;
         }
+    }
+
+    /**
+     * Determine whether a statement should be skipped during restore.
+     *
+     * mysqldump emits LOCK TABLES / UNLOCK TABLES around each table block.
+     * Executing these during a programmatic restore is harmful:
+     *
+     *   - LOCK TABLES implicitly commits the active transaction (MySQL
+     *     limitation), breaking the atomicity guarantee.
+     *   - The connection becomes locked: NO table outside the lock list —
+     *     including our own `restores` tracking table — can be accessed
+     *     until UNLOCK TABLES runs, which may never happen if the restore
+     *     fails mid-table.
+     *   - They are completely unnecessary: the restore already runs inside
+     *     a transaction with FK checks disabled.
+     */
+    private function shouldSkip(string $statement): bool
+    {
+        $upper = strtoupper(ltrim($statement));
+
+        if (str_starts_with($upper, 'LOCK TABLES') || str_starts_with($upper, 'UNLOCK TABLES')) {
+            return true;
+        }
+
+        return false;
     }
 }
